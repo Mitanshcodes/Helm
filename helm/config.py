@@ -68,6 +68,13 @@ BREATH_SOFT = 0.25
 BREATH_HARD = 0.65
 BREATH_MIN_PRESS_MS = 80
 BREATH_BASELINE_S = 2.0
+BREATH_BASELINE_WINDOW_S = 5.0     # rolling median window, only while no press is active
+BREATH_MAX_PUFF_MV = 400.0         # displacement from baseline at full level; calibrate() overrides
+BREATH_MAX_SIP_MV = 400.0
+SERIAL_PROBE_S = 3.0               # a classic Uno resets when the port opens: ~1.5 s of silence first
+SERIAL_READ_TIMEOUT_S = 0.2
+SERIAL_RECONNECT_S = 1.0           # wait before retrying after an unplugged cable
+SERIAL_STALE_S = 1.0               # no valid line for this long -> report not connected
 
 # ------------------------------------------------------------------ P3: learning and evaluation
 KNN_NEIGHBORS = 7
