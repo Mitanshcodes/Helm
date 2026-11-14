@@ -1,5 +1,6 @@
 // OWNER: P4
-// Game picker, "Build my mapping", the proposed mapping with the coach's reasons, Accept, session review.
+// The Captain (the AI coach): game picker, "Build my mapping", the proposed mapping with its reasons, Accept,
+// session review.
 import { useEffect, useState } from "react";
 import type { CoachResult, HelmState, Mapping, Send } from "../types";
 import { MappingTable } from "./MappingView";
@@ -32,7 +33,8 @@ export function CoachPanel(props: { state: HelmState; send: Send; result: CoachR
       <button className="btn" disabled={busy} onClick={() => send({ cmd: "coach_review" })}>
         Review my session
       </button>
-      {busy && <p className="muted">The coach is working…</p>}
+      <p className="caption">The Captain looks up the game's controls and puts your strongest moves on the buttons that matter most.</p>
+      {busy && <p className="muted">The Captain is working… (up to a couple of minutes when it looks a game up)</p>}
 
       {result && !busy && (
         <>

@@ -1,8 +1,7 @@
 // OWNER: P4
-// "your moves -> the buttons": one taped-down card per move with its face icon, mode, the button it presses in
+// The moves column: one taped-down card per move with its face icon, mode, the button it presses in
 // big letters, a bar with a solid notch (fires) and a hollow notch (lets go), and the live value. A firing card
 // fills pink and says FIRING!. The last card is the "teach a new move" coupon. ControllerCard is the pad.
-import { forwardRef } from "react";
 import { TAKES_LABEL } from "../teach";
 import type { MoveRow } from "../moves";
 import { isBreath, keyText, moveName } from "../moves";
@@ -84,32 +83,18 @@ function BreathStrip({ breath, marks }: { breath: number; marks: { soft: number;
   );
 }
 
-export const MovesPanel = forwardRef<HTMLHeadingElement, {
-  state: HelmState;
-  rows: MoveRow[];
-  onTeach: () => void;
-  teachBusy: boolean;
-  onMeasureBreath: () => void;
-}>(function MovesPanel({ state, rows, onTeach, teachBusy, onMeasureBreath }, heading) {
+export function MovesPanel({ state, rows, onTeach, teachBusy }: { state: HelmState; rows: MoveRow[]; onTeach: () => void; teachBusy: boolean }) {
   const mapping = state.mapping;
   const usesBreath = [...(mapping?.buttons ?? []).map((b) => b.gesture), ...(mapping?.triggers ?? []).map((t) => t.source)].some(isBreath);
   return (
     <>
-      <div className="section-head">
-        <h2 className="display" ref={heading} tabIndex={-1}>
-          your moves <span className="arrow">→</span> <span className="blue">the buttons</span>
-        </h2>
-        <p className="note">
-          Solid notch fires · hollow notch lets go
-          {state.breath_connected && <BreathStrip breath={state.breath ?? 0} marks={state.breath_marks ?? { soft: 0.25, hard: 0.65 }} />}
-          {state.breath_connected && (
-            <button className="btn small" disabled={teachBusy} onClick={onMeasureBreath} title="Measures how hard you can sip and puff">
-              Measure my breath
-            </button>
-          )}
-          {!state.breath_connected && usesBreath && <span className="breath-off">Breath sensor not connected · plug it in, Helm finds it in a few seconds</span>}
+      <h2 className="sr-only">Your moves and the buttons they press</h2>
+      {state.breath_connected && (
+        <p className="breath-row">
+          <BreathStrip breath={state.breath ?? 0} marks={state.breath_marks ?? { soft: 0.25, hard: 0.65 }} />
         </p>
-      </div>
+      )}
+      {!state.breath_connected && usesBreath && <p className="breath-row breath-off">Breath sensor not connected · plug it in, Helm finds it in a few seconds</p>}
       <ul className="moves" role="list" aria-label="Your moves and the buttons they press">
         {rows.map((r, i) => (
           <Card key={r.id} row={r} index={i} />
@@ -130,10 +115,10 @@ export const MovesPanel = forwardRef<HTMLHeadingElement, {
           </button>
         </li>
       </ul>
-      {rows.length === 0 && <p className="empty-note">No moves are mapped yet. Open the setup pages below and build a mapping with the coach.</p>}
+      {rows.length === 0 && <p className="empty-note">No moves are mapped yet. Open Mapping or the Captain in the Anchor below.</p>}
     </>
   );
-});
+}
 
 /** The pad as Helm drives it, with a "pressing" sticker and a one-line summary. */
 export function ControllerCard({ state, mapping }: { state: HelmState; mapping: Mapping | null }) {

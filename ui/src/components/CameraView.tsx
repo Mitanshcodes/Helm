@@ -36,7 +36,10 @@ function drawMesh(ctx: CanvasRenderingContext2D, points: [number, number][]) {
   OPEN_CONTOURS.forEach((ids) => trace(ids, false));
 }
 
-export function CameraView({ frame, state, compact, hint }: { frame: FrameMsg | null; state: HelmState; compact: boolean; hint?: string | null }) {
+export type CameraSize = "compact" | "hero" | "stage"; // overlay window, dashboard centrepiece, focus view
+
+export function CameraView({ frame, state, compact, size, hint }: { frame: FrameMsg | null; state: HelmState; compact?: boolean; size?: CameraSize; hint?: string | null }) {
+  const variant: CameraSize = size ?? (compact ? "compact" : "hero");
   const video = useRef<HTMLCanvasElement>(null);
   const mesh = useRef<HTMLCanvasElement>(null);
   const image = useRef<HTMLImageElement | null>(null);
@@ -68,7 +71,7 @@ export function CameraView({ frame, state, compact, hint }: { frame: FrameMsg | 
 
   const found = Boolean(frame) && state.face;
   return (
-    <figure className={compact ? "polaroid compact" : "polaroid"}>
+    <figure className={`polaroid ${variant}`}>
       <div className="camera">
         <canvas ref={video} className="camera-video" width={W} height={H} aria-hidden="true" />
         <canvas
@@ -81,6 +84,7 @@ export function CameraView({ frame, state, compact, hint }: { frame: FrameMsg | 
         />
         {!frame && <p className="camera-msg">no camera picture yet</p>}
         {frame && !state.face && <p className="camera-msg">move into view</p>}
+        {frame && state.face && state.paused && !state.progress && <p className="camera-msg">paused · close your eyes {(state.mapping?.pause?.hold_ms ?? 2000) / 1000} s to resume</p>}
         {hint && <p className="camera-hint">{hint}</p>}
       </div>
       <figcaption>
@@ -88,7 +92,7 @@ export function CameraView({ frame, state, compact, hint }: { frame: FrameMsg | 
           <h2 className="title">the camera</h2>
           <span className="face-flag">{found ? "✓ face found" : frame ? "✗ no face" : "✗ no video"}</span>
         </div>
-        {!compact && <p className="caption">Mirrored. Video never leaves this laptop.</p>}
+        {variant !== "compact" && <p className="caption">Video never leaves this laptop.</p>}
         <p className="pose">
           {(
             [

@@ -1,5 +1,5 @@
 // OWNER: P4
-// The mapping editor, a read-only table (used by the coach) and a raw JSON box for advanced edits.
+// The mapping editor, a read-only table (used by the Captain) and a raw JSON box for advanced edits.
 import { useEffect, useState } from "react";
 import type { Catalog, Mapping, MappingStatus, Send } from "../types";
 import { MappingEditor } from "./MappingEditor";
@@ -61,7 +61,7 @@ export function MappingView(props: { mapping: Mapping | null; catalog?: Catalog;
       {mapping ? (
         <MappingEditor mapping={mapping} catalog={catalog} status={status} apply={apply} send={send} />
       ) : (
-        <p className="muted">Build a mapping with the coach, or paste one below.</p>
+        <p className="muted">Build a mapping with the Captain, or paste one below.</p>
       )}
       <details className="json-edit">
         <summary>Edit as JSON</summary>

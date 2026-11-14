@@ -1,10 +1,10 @@
 // OWNER: P4
-// The card for teaching your own move, shown over the blurred moves panel: a short introduction with the name,
-// a calm "get ready" pause before each recording, and the result. The recordings themselves run in the Wizard.
+// The cards for teaching your own move, shown in the focus view: a short introduction with the name, a calm
+// "get ready" pause before the everyday-face recording, and the result. The recordings themselves run in the Wizard.
 import { useEffect, useRef, useState } from "react";
 import { speak } from "../feedback";
 import { humanize } from "../format";
-import { READY_MS, TAKES_LABEL, type TeachFlow } from "../teach";
+import { READY_MS, TAKES, TAKES_LABEL, type TeachFlow } from "../teach";
 import type { HelmState, Mapping } from "../types";
 import { PutOnButton } from "./PutOnButton";
 
@@ -59,7 +59,8 @@ function Intro({ state, hasFace, begin, close }: Props) {
           </li>
         )}
         <li>
-          <b>Your move, a few times.</b> When the card turns dark and says GO, do it and hold. Then relax.
+          <b>Your move, {TAKES} times.</b> Relax while the countdown runs. When the card turns pink and says GO, do the
+          move and hold it until the bar fills. Then relax again for the next try.
         </li>
         <li>
           <b>See how well it learned.</b> Then put it on a button.
@@ -98,11 +99,9 @@ function Intro({ state, hasFace, begin, close }: Props) {
 
 function Ready({ flow, go, close, voice }: Props) {
   const [now, setNow] = useState(() => performance.now());
-  const face = flow.stage === "ready_face";
-  const title = face ? "First, your everyday face." : `Now your move: ${humanize(flow.name)}.`;
-  const body = face
-    ? "Look at the screen and relax. Then a short text appears: read it aloud at your own pace. Mouthing the words is fine."
-    : "Get ready, do your move on GO and hold it, then relax. It repeats a few times.";
+  const face = true; // only the everyday face has a waiting card: each try of the move has its own countdown
+  const title = "First, your everyday face.";
+  const body = "Look at the screen and relax. Then a short text appears: read it aloud at your own pace. Mouthing the words is fine.";
 
   useEffect(() => {
     const t = window.setInterval(() => setNow(performance.now()), 200);
@@ -117,7 +116,7 @@ function Ready({ flow, go, close, voice }: Props) {
   const n = Math.round((left / READY_MS) * 10);
   return (
     <div className="setup-card">
-      <h2 className="card-title">{flow.withFace ? (face ? "GET READY · PART 1 OF 2" : "GET READY · PART 2 OF 2") : "GET READY"}</h2>
+      <h2 className="card-title">GET READY · PART 1 OF 2</h2>
       <div className="ready-row">
         <span className="count" aria-label={`Starting in ${seconds} seconds`}>
           {seconds}
@@ -186,7 +185,7 @@ export function TeachPanel(props: Props) {
   return (
     <div className="teach" key={flow.stage}>
       {flow.stage === "intro" && <Intro {...props} />}
-      {(flow.stage === "ready_face" || flow.stage === "ready_move") && <Ready {...props} />}
+      {flow.stage === "ready_face" && <Ready {...props} />}
       {flow.stage === "result" && <Result {...props} />}
       {(flow.stage === "face" || flow.stage === "move") && (
         <div className="setup-card">

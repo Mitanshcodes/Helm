@@ -3,7 +3,7 @@
 // synthesized. Browsers block audio until the page has had one click or key press, so the first press anywhere
 // unlocks both; until then they stay silent rather than fail.
 import { useEffect, useRef, useState } from "react";
-import type { HelmState } from "./types";
+import type { HelmState, Progress } from "./types";
 
 const params = new URLSearchParams(location.search);
 // Only one window should make sound: the full dashboard by default, the overlay only with ?sound=1.
@@ -78,14 +78,19 @@ export function useSetting(name: string): [boolean, (on: boolean) => void] {
 }
 
 /** Reads each new wizard prompt aloud, so a player turning their head away from the screen still hears it. */
-export function useSpokenPrompts(state: HelmState | null, on: boolean) {
+/** Speaks each new instruction. `say` may reword a step (a string), keep it quiet (null) or leave the engine's
+ *  prompt (undefined); the teach flow uses it so one merged "relax, get ready" step is spoken once. */
+export function useSpokenPrompts(state: HelmState | null, on: boolean, say?: (p: Progress) => string | null | undefined) {
   const last = useRef<string | null>(null);
-  const prompt = state?.progress?.prompt ?? null;
+  const progress = state?.progress ?? null;
+  const custom = progress && say ? say(progress) : undefined;
+  const text = custom === undefined ? progress?.prompt ?? null : custom;
+  const key = progress ? `${progress.step}|${text ?? ""}` : null;
   useEffect(() => {
-    if (prompt === last.current) return;
-    last.current = prompt;
-    if (on && prompt) speak(prompt);
-  }, [prompt, on]);
+    if (key === last.current) return;
+    last.current = key;
+    if (on && text) speak(text);
+  }, [key, text, on]);
 }
 
 /** Clicks when a controller button goes down, and a lower two-note sound when control pauses or resumes. */

@@ -1850,3 +1850,546 @@ input[type="range"] {
 .breath-off {
   font-weight: 400;
 }
+
+/* ================================================================ layout v2: picker, top bar, hero, anchor, focus */
+
+/* ---------------------------------------------------------------- top bar */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-wheel {
+  color: var(--blue);
+  filter: drop-shadow(calc(var(--mis) * 3px) calc(var(--mis) * 2px) 0 var(--pink));
+}
+
+.brand .wordmark.small,
+.picker-brand .wordmark.small {
+  font-size: 64px;
+}
+
+/* ---------------------------------------------------------------- the camera, centre stage */
+
+.camera-row {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 4px;
+}
+
+.polaroid.hero {
+  width: min(100%, calc(60vh * 4 / 3 + 34px));
+}
+
+.polaroid.stage {
+  width: min(100%, calc(50vh * 4 / 3 + 34px));
+  transform: rotate(0.8deg);
+}
+
+/* ---------------------------------------------------------------- moves beside the controller */
+
+.play-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.42fr);
+  align-items: start;
+  gap: 34px;
+}
+
+.moves-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.moves-col .moves {
+  grid-template-columns: repeat(auto-fill, minmax(188px, 1fr));
+  padding-top: 18px;
+}
+
+.play-row .controller-card {
+  position: sticky;
+  top: 18px;
+  margin-top: 18px;
+}
+
+.breath-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- the anchor */
+
+.anchor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  padding: 30px 0 10px;
+  border-top: 3px solid var(--ink);
+}
+
+.anchor-title {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 72px;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  color: var(--blue);
+  text-shadow: calc(var(--mis) * 4px) calc(var(--mis) * 3px) 0 var(--pink);
+}
+
+.anchor-buttons {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 22px;
+  width: 100%;
+}
+
+.anchor-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 118px;
+  padding: 18px 20px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 7px 7px 0 var(--blue);
+  text-align: left;
+  cursor: pointer;
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s ease;
+}
+
+.anchor-btn:hover {
+  background: var(--pink-soft);
+  transform: rotate(0deg) translateY(-3px);
+}
+
+.anchor-btn:active {
+  transform: translate(4px, 4px);
+  box-shadow: 2px 2px 0 var(--blue);
+}
+
+.anchor-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.anchor-blurb {
+  font-size: 16px;
+}
+
+/* ---------------------------------------------------------------- bottom: stats and options */
+
+.foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px 40px;
+  padding-top: 20px;
+  border-top: 3px solid var(--ink);
+}
+
+.foot-row .options {
+  flex: 1 1 520px;
+  border-top: 0;
+  padding-top: 0;
+  justify-content: flex-end;
+}
+
+.foot-row .stamp {
+  width: 104px;
+  height: 104px;
+}
+
+.foot-row .stamp b {
+  font-size: 32px;
+}
+
+/* ---------------------------------------------------------------- in front of the dashboard */
+
+/* The dashboard blurs behind calibration, teaching and Anchor pages. */
+.screen.behind {
+  filter: blur(7px);
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+:root[data-contrast="high"] .screen.behind {
+  filter: none;
+  opacity: 0.12;
+}
+
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 4vh 24px 6vh;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--paper) 35%, transparent);
+  zoom: calc(var(--zoom) * var(--fit));
+  animation: layer-in 0.25s ease both;
+}
+
+@keyframes layer-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Focus mode: the instructions on top, the camera big underneath. */
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  width: min(1000px, 100%);
+}
+
+.instructions {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.instructions-label {
+  position: absolute;
+  z-index: 1;
+  top: -16px;
+  left: 22px;
+  padding: 3px 12px;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: rotate(-2deg);
+}
+
+.instructions .setup-card,
+.instructions .teach {
+  max-width: none;
+  width: 100%;
+}
+
+.instructions .setup-card {
+  transform: none;
+}
+
+.instructions .setup-card::before {
+  display: none;
+}
+
+/* Teaching: one "relax, get ready" step with a countdown, then GO. */
+.take-row {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  margin-top: 12px;
+}
+
+.take-row .instruction {
+  margin-top: 0;
+}
+
+.count.calm {
+  border-color: var(--ink);
+  font-size: 44px;
+}
+
+.count.go {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--pink);
+  font-size: 44px;
+}
+
+:root[data-contrast="high"] .count.go {
+  color: #ffffff;
+}
+
+.setup-card.go .chip {
+  border-color: var(--ink);
+}
+
+.setup-card.go .chip.now {
+  background: var(--ink);
+  color: var(--pink);
+}
+
+.setup-card.take .chips {
+  margin-top: 12px;
+}
+
+/* An Anchor page. */
+.anchor-panel {
+  width: min(1320px, 100%);
+  box-shadow: 10px 10px 0 var(--pink);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 3px solid var(--ink);
+}
+
+.panel-title {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 48px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--blue);
+  text-shadow: calc(var(--mis) * 3px) calc(var(--mis) * 2px) 0 var(--pink);
+}
+
+.profile-now {
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 800;
+}
+
+/* ---------------------------------------------------------------- who's at the helm? */
+
+.picker {
+  min-height: calc(100vh / (var(--zoom) * var(--fit))); /* zoom shrinks vh too: fill the real window */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 34px;
+  padding: 40px 34px 60px;
+  zoom: calc(var(--zoom) * var(--fit));
+  animation: layer-in 0.4s ease both;
+}
+
+.picker-brand {
+  position: absolute;
+  top: 18px;
+  left: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.picker-title {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 92px;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  text-align: center;
+}
+
+.picker-title .blue {
+  color: var(--blue);
+  text-shadow: calc(var(--mis) * 5px) calc(var(--mis) * 4px) 0 var(--pink);
+}
+
+.picker-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 38px;
+  max-width: 1400px;
+}
+
+.picker-tiles > li {
+  transform: rotate(var(--tilt, 0deg));
+}
+
+.profile-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 210px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.profile-tile:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 190px;
+  height: 190px;
+  border: 4px solid var(--ink);
+  box-shadow: 9px 9px 0 var(--ink);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.avatar::before {
+  content: "";
+  position: absolute;
+  top: -13px;
+  left: calc(50% - 35px);
+  width: 70px;
+  height: 22px;
+  background: var(--tape);
+  transform: rotate(-4deg);
+}
+
+.avatar.pink {
+  background: var(--pink);
+}
+
+.avatar.blue {
+  background: var(--blue);
+  color: var(--paper);
+}
+
+.avatar.yellow {
+  background: var(--yellow);
+}
+
+.avatar.navy {
+  background: var(--navy);
+  color: var(--paper);
+}
+
+.avatar .face-icon {
+  stroke-width: 1.2;
+}
+
+.avatar.add {
+  border-style: dashed;
+  box-shadow: none;
+  font-family: var(--display);
+  font-size: 110px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--blue);
+}
+
+.profile-tile:hover:not(:disabled) .avatar,
+.profile-tile:focus-visible .avatar {
+  transform: translate(-4px, -4px) rotate(-1deg);
+  box-shadow: 14px 14px 0 var(--blue);
+}
+
+.profile-tile:focus-visible {
+  outline: none;
+}
+
+.profile-tile:focus-visible .avatar {
+  outline: 5px solid var(--focus);
+  outline-offset: 5px;
+}
+
+.tile-name {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.tile-note {
+  font-size: 15px;
+  text-align: center;
+}
+
+.new-form {
+  align-items: stretch;
+  gap: 8px;
+  width: 230px;
+  padding: 16px;
+  border: 4px dashed var(--ink);
+  cursor: default;
+}
+
+.new-form input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 3px solid var(--ink);
+  background: var(--white);
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.new-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.picker-foot {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- v2 on narrower screens */
+
+@media (max-width: 1250px) {
+  .play-row {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.5fr);
+  }
+
+  .anchor-buttons {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .play-row,
+  .anchor-buttons {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .play-row .controller-card {
+    position: static;
+  }
+
+  .picker-title {
+    font-size: 56px;
+  }
+}
+
+:root[data-contrast="high"] .anchor-btn,
+:root[data-contrast="high"] .picker-tiles > li,
+:root[data-contrast="high"] .avatar {
+  transform: none;
+  box-shadow: none;
+}

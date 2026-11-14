@@ -1,43 +1,37 @@
 // OWNER: P4
-// Profile: which profile is loaded, loading another, and saving this one. Sound lives in the OPTIONS footer.
-import { useEffect, useState } from "react";
+// The Anchor's Profile page: who is playing which game, switching profile (back to the profile screen), saving,
+// and measuring breath when a sip-and-puff sensor is attached.
 import { humanize } from "../format";
 import type { HelmState, Send } from "../types";
 
 export const JUDGE = "judge"; // the shared quick-start identity (profiles/judge)
 
-export function ProfileCard({ state, send, profiles }: { state: HelmState; send: Send; profiles: Record<string, string[]> }) {
-  const current = `${state.profile.player}/${state.profile.game}`;
-  const options = Object.entries(profiles).flatMap(([player, games]) => games.map((game) => `${player}/${game}`));
-  if (!options.includes(current)) options.unshift(current);
-  const [choice, setChoice] = useState(current);
-  useEffect(() => setChoice(current), [current]);
-  const [player, game] = choice.split("/");
-
+export function ProfileCard(props: { state: HelmState; send: Send; onSwitch: () => void; busy: boolean }) {
+  const { state, send, onSwitch, busy } = props;
+  const { player, game, calibrated } = state.profile;
+  const shared = player === JUDGE || player === "guest";
   return (
     <section className="tool">
-      <label className="field-label" htmlFor="profile">
-        PROFILE
-      </label>
+      <p className="profile-now">
+        <mark>{humanize(player)}</mark> is playing <mark>{game}</mark>
+      </p>
+      <p className="caption">
+        {calibrated === "full" ? "Fully calibrated." : calibrated === "quick" ? "Quick setup: resting face only." : "Not calibrated yet."}{" "}
+        {shared ? "This shared profile never keeps a calibration." : "Saving keeps the calibration, mapping and moves on this laptop."}
+      </p>
       <div className="line">
-        <select id="profile" value={choice} onChange={(e) => setChoice(e.target.value)}>
-          {options.map((o) => {
-            const [p, g] = o.split("/");
-            return (
-              <option key={o} value={o}>
-                {humanize(p)} · {g}
-              </option>
-            );
-          })}
-        </select>
-        <button className="btn primary" disabled={choice === current} onClick={() => send({ cmd: "load_profile", player, game })}>
-          LOAD
+        <button className="btn primary" onClick={onSwitch}>
+          Switch profile
         </button>
         <button className="btn" onClick={() => send({ cmd: "save_profile" })}>
-          SAVE THIS PROFILE
+          Save this profile
         </button>
+        {state.breath_connected && (
+          <button className="btn" disabled={busy} onClick={() => send({ cmd: "calibrate", mode: "breath" })} title="Measures how hard you can sip and puff">
+            Measure my breath
+          </button>
+        )}
       </div>
-      <p className="fine">Loading a profile brings its mapping, calibration and learned moves. The guest profile never keeps a calibration.</p>
     </section>
   );
 }

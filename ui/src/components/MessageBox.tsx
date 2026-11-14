@@ -1,7 +1,6 @@
 // OWNER: P4
-// The "Heads up" line under the move cards. The main sentence follows the state: paused, just calibrated, a move
-// just fired, a fatigue note, or a plain hint, with its key words highlighted. On the right: expressions Helm
-// watches that nothing uses.
+// The one line under the move cards. It follows the state: paused, just calibrated, a move just fired (and which
+// button it pressed), a fatigue note, or a plain hint, with its key words highlighted.
 import { useRef } from "react";
 import { humanize } from "../format";
 import { keyText, moveName } from "../moves";
@@ -10,13 +9,6 @@ import type { HelmState, Mapping } from "../types";
 const FIRE_MS = 2000;
 const DONE_MS = 6000;
 
-const WATCH: [string, string][] = [
-  ["mouthPucker", "pucker"],
-  ["cheekPuff", "cheek puff"],
-  ["mouthSmileLeft", "smile"],
-  ["browInnerUp", "eyebrows"],
-  ["jawOpen", "jaw"],
-];
 
 type Line = { lead: string; mark: string; rest: string };
 
@@ -63,31 +55,11 @@ export function MessageBox({ state, mapping, doneAt, hold }: { state: HelmState;
   else if (state.notices?.length) main = warm(state.notices[0]);
   else main = { lead: "Ready.", mark: "", rest: "Turn your head to steer. Make a move to press its button." };
 
-  const used = new Set(Object.values(mapping?.gestures ?? {}).flatMap((g) => g.sources ?? []));
-  const reliable = new Set(state.gestures?.reliable ?? []);
-  const checked = state.profile.calibrated === "full";
-  const watching = WATCH.filter(([source]) => !used.has(source) && state.expressions?.[source] !== undefined);
-
   return (
     <div className="message">
       <p className="message-main" aria-live="polite">
         <b>{main.lead}</b> {main.mark && <mark>{main.mark}</mark>}
         {main.rest}
-      </p>
-      <p className="message-sub">
-        {watching.length ? (
-          <>
-            Also watching:{" "}
-            {watching.map(([source, label], i) => (
-              <span key={source}>
-                {i > 0 && ", "}
-                <b>{label}</b> ({checked ? (reliable.has(source) ? "works for you" : "weak") : "not checked"}, not mapped)
-              </span>
-            ))}
-          </>
-        ) : (
-          <>Close your eyes for {hold} s to pause or resume.</>
-        )}
       </p>
     </div>
   );

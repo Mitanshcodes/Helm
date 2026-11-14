@@ -1,16 +1,20 @@
 // OWNER: P4
-// One page, styled as a single green LCD screen (docs/SPEC.md section 9). ?overlay=1 is the small window beside
+// The dashboard, printed like a riso zine page (docs/SPEC.md section 9). ?overlay=1 is the small window beside
 // the game; ?quick=1 makes calibration a quick one; ?mock=1 runs with no backend.
-// While calibration or teaching is on screen, everything the player does not need is blurred and unreachable,
-// and a card over the moves panel is the only thing to look at.
+//
+//   intro -> "who's at the helm?" (profile picker) -> dashboard
+//
+// The dashboard, top to bottom: the wordmark and Recalibrate; the camera; the move cards beside the controller
+// (so a fired move and the pressed button are seen together); the Anchor (every setting behind five buttons);
+// the stats. Calibration, teaching and Anchor pages open in front of the dashboard, which blurs behind them:
+// calibration and teaching as "focus mode", the instructions over a big camera.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CoachResult, Command, EventMsg, Mapping, MappingStatus } from "./types";
 import { MOCK, fetchProfiles, useHelmSocket } from "./useHelmSocket";
 import { useFireClicks, useSetting, useSpokenPrompts } from "./feedback";
-import { HoldClock, buildRows, holdSeconds } from "./moves";
-import { useTeachFlow } from "./teach";
+import { HoldClock, buildRows } from "./moves";
+import { spokenTake, useTeachFlow } from "./teach";
 import { JUDGE, ProfileCard } from "./components/ProfileCard";
-import { Blur } from "./components/Blur";
 import { CalibrationCard, CalibrationDone, cameraHint, useCalibrationTrack, type CalMode, type BreathResult } from "./components/CalibrationCard";
 import { DevControls } from "./components/DevControls";
 import { CameraView, StatStamps } from "./components/CameraView";
@@ -21,17 +25,20 @@ import { MappingView } from "./components/MappingView";
 import { MessageBox } from "./components/MessageBox";
 import { ControllerCard, MovesPanel } from "./components/MovesPanel";
 import { OptionsBar, useOptions } from "./components/OptionsBar";
-import { SetupTabs, useSetupTab } from "./components/SetupTabs";
-import { Header, StatusStamp, statusOf } from "./components/StatusBar";
+import { ProfilePicker } from "./components/ProfilePicker";
+import { Anchor, AnchorPanel, type AnchorPage, type TabId } from "./components/SetupTabs";
+import { TopBar } from "./components/StatusBar";
 import { TeachPanel } from "./components/TeachPanel";
 import { Wizard } from "./components/Wizard";
 
 const params = new URLSearchParams(location.search);
 const QUICK = params.has("quick");
-const FACE_STEADY_MS = 1000; // a face must be visible this long before calibration starts by itself
+const FACE_STEADY_MS = 1000; // a face must be visible this long before a first calibration starts by itself
 const MAPPING_ACK_MS = 600; // no "error" event within this time means set_mapping was applied
 const TOAST_MS = 6000;
-const DONE_CARD_MS = 2200; // "CALIBRATION DONE" stays this long before the dashboard unlocks
+const DONE_CARD_MS = 2200; // "CALIBRATION DONE" stays this long before the dashboard comes back
+
+type Screen = "intro" | "pick" | "dash";
 
 export default function App() {
   const [coach, setCoach] = useState<CoachResult | null>(null);
@@ -39,18 +46,21 @@ export default function App() {
   const [applied, setApplied] = useState<Mapping | null>(null); // last mapping this page knows was applied
   const [mappingStatus, setMappingStatus] = useState<MappingStatus>({ errors: [], applied: false });
   const [toast, setToast] = useState<string | null>(null);
-  const [intro, setIntro] = useState(true); // the intro plays on every page load (and on REPLAY INTRO)
+  const [screen, setScreen] = useState<Screen>("intro"); // the intro plays on every page load (and on REPLAY INTRO)
+  const picked = useRef(false); // a profile was chosen on this page: replaying the intro returns to the dashboard
+  const [panel, setPanel] = useState<TabId | null>(null); // the open Anchor page
+  const loading = useRef<string | null>(null); // the profile asked for and not loaded yet
+  const [loadedFor, setLoadedFor] = useState<string | null>(null); // the profile this page loaded
   const [doneAt, setDoneAt] = useState(-Infinity);
   const [, rerender] = useState(0);
   const pending = useRef<number | undefined>(undefined); // timer of a set_mapping waiting for error-or-silence
   const faceSince = useRef<number | null>(null);
   const autoSent = useRef(false);
-  const [entrance, setEntrance] = useState(0); // bumped when the intro ends: replays the dashboard's entrance
+  const [entrance, setEntrance] = useState(0); // bumped when the dashboard appears: replays its entrance
   const calMode = useRef<CalMode>(QUICK ? "quick" : "full"); // the running (or last) calibration
   const [breathResult, setBreathResult] = useState<BreathResult | null>(null);
   const offerTeach = useRef(false); // offer "teach a move" once the done card is gone
   const [profiles, setProfiles] = useState<Record<string, string[]>>({});
-  const visitorPending = useRef(false); // "Next player" waits for the guest profile before calibrating
   const sendRef = useRef<(cmd: Command) => void>(() => {});
   const [voice, setVoice] = useSetting("voice");
   const [clicks, setClicks] = useSetting("clicks");
@@ -58,9 +68,8 @@ export default function App() {
   const refreshProfiles = useCallback(() => void fetchProfiles().then(setProfiles), []);
   const teachRef = useRef<ReturnType<typeof useTeachFlow> | null>(null);
   const playerRef = useRef("guest");
-  const [tab, setTab] = useSetupTab();
-  const heading = useRef<HTMLHeadingElement>(null);
   const pauseClock = useRef(new HoldClock());
+  const main = useRef<HTMLElement>(null);
 
   const onEvent = useCallback((msg: EventMsg) => {
     const data = msg.data;
@@ -81,12 +90,18 @@ export default function App() {
     if (msg.name === "coach_result") {
       setCoach(data as unknown as CoachResult);
       setCoachBusy(false);
-      setTab("coach"); // show the proposal where it can be accepted
+      setPanel("captain"); // show the proposal where it can be accepted
     } else if (msg.name === "profile_loaded") {
-      if (visitorPending.current && data.player === JUDGE) {
-        visitorPending.current = false;
-        calMode.current = "quick";
-        sendRef.current({ cmd: "calibrate", mode: "quick" });
+      const player = String(data.player);
+      if (loading.current === player) {
+        loading.current = null;
+        setLoadedFor(player);
+        if (player === JUDGE) {
+          // A judge gets the 15-second setup straight away: resting face only.
+          autoSent.current = true;
+          calMode.current = "quick";
+          sendRef.current({ cmd: "calibrate", mode: "quick" });
+        }
       }
       setApplied(null);
       setCoach(null);
@@ -103,7 +118,7 @@ export default function App() {
         setToast(message);
       }
     }
-  }, [setTab]);
+  }, []);
 
   const { state, frame, connection, send: rawSend } = useHelmSocket(onEvent);
 
@@ -120,22 +135,38 @@ export default function App() {
   const teach = useTeachFlow(send);
   teachRef.current = teach;
   if (state) playerRef.current = state.profile.player;
-  useSpokenPrompts(state, voice);
+  const teaching = teach.flow !== null && (teach.flow.stage === "face" || teach.flow.stage === "move");
+  useSpokenPrompts(state, voice, (p) => (teaching && teach.flow ? spokenTake(p, teach.flow.name) : undefined));
   useFireClicks(state, clicks);
 
   useEffect(() => {
     if (connection === "open") refreshProfiles();
   }, [connection, refreshProfiles]);
 
-  const nextPlayer = useCallback(() => {
-    if (!state) return;
-    const games = profiles[JUDGE] ?? [];
-    const game = games.includes(state.profile.game) ? state.profile.game : games[0];
-    if (!game) return;
+  const pick = useCallback(
+    (player: string) => {
+      teach.close();
+      setPanel(null);
+      autoSent.current = false;
+      faceSince.current = null;
+      loading.current = player;
+      setLoadedFor(null);
+      send({ cmd: "load_profile", player, game: state?.profile.game ?? "SuperTuxKart" });
+      picked.current = true;
+      setScreen("dash");
+      setEntrance((n) => n + 1);
+    },
+    [send, state?.profile.game, teach],
+  );
+
+  const closePanel = useCallback(() => setPanel(null), []); // stable: the open page focuses Close once
+
+  const switchProfile = useCallback(() => {
+    setPanel(null);
     teach.close();
-    visitorPending.current = true;
-    send({ cmd: "load_profile", player: JUDGE, game });
-  }, [state, profiles, send, teach]);
+    refreshProfiles();
+    setScreen("pick");
+  }, [refreshProfiles, teach]);
 
   const applyMapping = useCallback(
     (next: Mapping) => {
@@ -158,9 +189,10 @@ export default function App() {
     teach.close();
   }, [connection]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // First calibration starts by itself once a face has been visible for a second, after the intro.
+  // A profile with no calibration starts its full setup by itself once a face has been steady for a second.
   useEffect(() => {
-    if (!state || intro || autoSent.current || connection !== "open") return;
+    if (!state || screen !== "dash" || autoSent.current || connection !== "open") return;
+    if (loadedFor === null || state.profile.player !== loadedFor) return;
     if (!state.face || state.profile.calibrated || state.progress) {
       faceSince.current = null;
       return;
@@ -171,7 +203,7 @@ export default function App() {
       autoSent.current = true;
       send({ cmd: "calibrate", mode: QUICK ? "quick" : "full" });
     }
-  }, [state, connection, send, intro]);
+  }, [state, connection, send, screen, loadedFor]);
 
   useEffect(() => {
     if (!toast) return;
@@ -180,24 +212,17 @@ export default function App() {
   }, [toast]);
 
   const endIntro = useCallback(() => {
-    setIntro(false);
-    setEntrance((n) => n + 1); // the dashboard slides in, section by section
-    window.setTimeout(() => heading.current?.focus(), 0); // screen readers start at "your moves -> the buttons"
+    setScreen(picked.current ? "dash" : "pick");
+    if (picked.current) setEntrance((n) => n + 1);
   }, []);
 
-  // Replay runs the whole intro again; it never recalibrates.
-  const replayIntro = useCallback(() => setIntro(true), []);
-
-  // The "CALIBRATION DONE" card ends: unlock the dashboard and put focus on the moves, or offer a new move.
+  // The "CALIBRATION DONE" card ends: the dashboard comes back, or "teach a move" is offered.
   const now = performance.now();
   const showingDone = now - doneAt < DONE_CARD_MS && !state?.progress;
   const wasShowingDone = useRef(false);
   useEffect(() => {
-    if (wasShowingDone.current && !showingDone) {
-      if (offerTeach.current) teachRef.current?.offer();
-      else heading.current?.focus();
-      offerTeach.current = false;
-    }
+    if (wasShowingDone.current && !showingDone && offerTeach.current) teachRef.current?.offer();
+    if (wasShowingDone.current && !showingDone) offerTeach.current = false;
     wasShowingDone.current = showingDone;
   }, [showingDone]);
   useEffect(() => {
@@ -206,39 +231,14 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [doneAt]);
 
-  const teaching = teach.flow !== null && (teach.flow.stage === "face" || teach.flow.stage === "move");
   const calibrating = Boolean(state?.progress) && !teaching;
   const track = useCalibrationTrack(state, calibrating);
-  const status = statusOf(state, connection === "open", teaching);
 
-  const offline = connection !== "open";
-  const lost = (
-    <div className="lost paper-card" role="alert">
-      <h2 className="title">can't reach helm</h2>
-      <p>
-        Make sure <code>python -m helm</code> is running. This page keeps trying{MOCK ? "" : " and will reconnect by itself"}.
-      </p>
-    </div>
-  );
-  if (!state)
-    return (
-      <main className="screen">
-        <StatusStamp status={status} />
-        {offline && connection === "closed" ? lost : <p className="starting">starting helm…</p>}
-      </main>
-    );
-
-  const mapping = state.mapping ?? applied;
-  const hold = holdSeconds(mapping);
-  const pauseGesture = mapping?.pause?.gesture;
-  const pauseHeld = pauseGesture
-    ? pauseClock.current.seconds(state.face ? state.activations?.[pauseGesture] ?? 0 : 0, state.thresholds?.[pauseGesture]?.on ?? 0.85, now)
-    : 0;
-  const rows = buildRows(state, mapping, pauseHeld);
-
+  // Focus mode: what is in front of the dashboard, and whether the big camera shows under it.
   let card: JSX.Element | null = null;
-  if (state.progress && teaching) card = <Wizard progress={state.progress} flow={teach.flow} />;
-  else if (state.progress)
+  let withCamera = true;
+  if (state?.progress && teaching) card = <Wizard progress={state.progress} flow={teach.flow} />;
+  else if (state?.progress)
     card = (
       <CalibrationCard
         state={state}
@@ -248,8 +248,9 @@ export default function App() {
         onSkip={calMode.current === "full" && !state.progress.step.startsWith("breath") ? () => send({ cmd: "calibrate", mode: "quick" }) : undefined}
       />
     );
-  else if (showingDone) card = <CalibrationDone state={state} mode={calMode.current} track={track} breath={breathResult} />;
-  else if (teach.flow)
+  else if (state && showingDone) card = <CalibrationDone state={state} mode={calMode.current} track={track} breath={breathResult} />;
+  else if (state && teach.flow) {
+    withCamera = teach.flow.stage === "ready_face";
     card = (
       <TeachPanel
         state={state}
@@ -260,94 +261,159 @@ export default function App() {
         go={teach.go}
         offer={teach.offer}
         close={teach.close}
-        mapping={mapping}
+        mapping={state.mapping ?? applied}
         apply={applyMapping}
       />
     );
-  const setup = card !== null;
+  }
+  const focus = screen === "dash" && card !== null;
+  const front = focus || (screen === "dash" && panel !== null);
+
+  useEffect(() => {
+    main.current?.toggleAttribute("inert", front); // React 18 has no inert prop
+  }, [front, screen]);
+
+  const offline = connection !== "open";
+  const lost = (
+    <div className="lost paper-card" role="alert">
+      <h2 className="title">can't reach helm</h2>
+      <p>
+        Make sure <code>python -m helm</code> is running. This page keeps trying{MOCK ? "" : " and will reconnect by itself"}.
+      </p>
+    </div>
+  );
+  const toastEl = toast && (
+    <button className="toast paper-card" role="alert" onClick={() => setToast(null)}>
+      {toast}
+    </button>
+  );
+  const intro = screen === "intro" && <Intro camera={frame !== null} face={state?.face ?? false} engine={connection === "open"} onDone={endIntro} />;
+
+  if (!state || !picked.current) {
+    return (
+      <>
+        {screen !== "intro" && <ProfilePicker profiles={profiles} ready={Boolean(state) && !offline} onPick={pick} />}
+        {intro}
+        {screen !== "intro" && offline && connection === "closed" && lost}
+        {toastEl}
+      </>
+    );
+  }
+  if (screen === "pick") {
+    return (
+      <>
+        <ProfilePicker profiles={profiles} ready={!offline} onPick={pick} />
+        {offline && lost}
+        {toastEl}
+      </>
+    );
+  }
+
+  const mapping = state.mapping ?? applied;
+  const pauseGesture = mapping?.pause?.gesture;
+  const pauseHeld = pauseGesture
+    ? pauseClock.current.seconds(state.face ? state.activations?.[pauseGesture] ?? 0 : 0, state.thresholds?.[pauseGesture]?.on ?? 0.85, now)
+    : 0;
+  const rows = buildRows(state, mapping, pauseHeld);
+  const busy = state.progress !== null || teach.flow !== null;
+  const openTeach = () => {
+    setPanel(null);
+    teach.offer();
+  };
+
+  const pages: AnchorPage[] = [
+    {
+      id: "mapping",
+      label: "Mapping",
+      blurb: "Which move presses which button",
+      body: <MappingView mapping={mapping} catalog={state.catalog} status={mappingStatus} apply={applyMapping} send={send} />,
+    },
+    {
+      id: "captain",
+      label: "Captain",
+      blurb: "Let the AI map your moves",
+      badge: coachBusy ? "…" : coach ? "NEW" : undefined,
+      body: <CoachPanel state={state} send={send} result={coach} busy={coachBusy} apply={applyMapping} />,
+    },
+    {
+      id: "moves",
+      label: "Your moves",
+      blurb: "Moves Helm learned from you",
+      badge: state.gestures.learned.length ? String(state.gestures.learned.length) : undefined,
+      body: <GestureRecorder state={state} send={send} busy={busy} onTeach={openTeach} mapping={mapping} apply={applyMapping} />,
+    },
+    {
+      id: "profile",
+      label: "Profile",
+      blurb: "Who's playing · switch · save",
+      body: <ProfileCard state={state} send={send} onSwitch={switchProfile} busy={busy} />,
+    },
+    {
+      id: "dev",
+      label: "Dev",
+      blurb: "Debug recordings for the team",
+      badge: state.dev?.recording ? "REC" : undefined,
+      body: <DevControls state={state} send={send} />,
+    },
+  ];
+  const openPage = pages.find((p) => p.id === panel);
 
   return (
     <>
-      <main className={`screen${offline ? " dimmed" : ""}${entrance ? (entrance % 2 ? " enter-a" : " enter-b") : ""}`} aria-hidden={offline || intro || undefined}>
-        <Header
-          state={state}
-          status={status}
-          setup={setup}
-          hold={hold}
-          canSkip={calibrating && calMode.current === "full" && !state.progress?.step.startsWith("breath")}
-          onNextPlayer={profiles[JUDGE]?.length ? nextPlayer : undefined}
-          onPause={() => send({ cmd: "pause", on: !state.paused })}
-          onRecalibrate={() => send({ cmd: "calibrate", mode: QUICK ? "quick" : "full" })}
-          onSkip={() => send({ cmd: "calibrate", mode: "quick" })}
-        />
-        <section className="moves-section" aria-label="Your moves and the buttons">
-          <div className="stack">
-            <Blur on={setup} className="moves-body">
-              <MovesPanel
-                ref={heading}
-                state={state}
-                rows={rows}
-                onTeach={teach.offer}
-                teachBusy={setup}
-                onMeasureBreath={() => send({ cmd: "calibrate", mode: "breath" })}
-              />
-              <MessageBox state={state} mapping={mapping} doneAt={doneAt} hold={hold} />
-            </Blur>
-            {card && <div className="card-slot">{card}</div>}
-          </div>
-        </section>
-        <div className="bottom-row">
-          <section className="camera-col" aria-label="Camera">
-            <CameraView frame={frame} state={state} compact={false} hint={calibrating ? cameraHint(state.progress) : null} />
-          </section>
-          <Blur on={setup} as="section" className="paper-card controller-card">
-            <ControllerCard state={state} mapping={mapping} />
-          </Blur>
-          <Blur on={setup}>
-            <StatStamps state={state} />
-          </Blur>
-        </div>
-        <OptionsBar
-          options={options}
-          set={setOptions}
-          sound={voice || clicks}
-          setSound={(on) => {
-            setVoice(on);
-            setClicks(on);
+      <main
+        ref={main}
+        className={`screen${offline ? " dimmed" : ""}${front ? " behind" : ""}${entrance ? (entrance % 2 ? " enter-a" : " enter-b") : ""}`}
+        aria-hidden={offline || front || screen === "intro" || undefined}
+      >
+        <TopBar
+          busy={busy}
+          onRecalibrate={() => {
+            setPanel(null);
+            send({ cmd: "calibrate", mode: QUICK ? "quick" : "full" });
           }}
-          onReplayIntro={replayIntro}
         />
-        <Blur on={setup}>
-          <SetupTabs
-            tab={tab}
-            setTab={setTab}
-            tabs={[
-              { id: "mapping", label: "Mapping", body: <MappingView mapping={mapping} catalog={state.catalog} status={mappingStatus} apply={applyMapping} send={send} /> },
-              {
-                id: "coach",
-                label: "Coach",
-                badge: coachBusy ? "…" : coach ? "NEW" : undefined,
-                body: <CoachPanel state={state} send={send} result={coach} busy={coachBusy} apply={applyMapping} />,
-              },
-              {
-                id: "moves",
-                label: "Your moves",
-                badge: state.gestures.learned.length ? String(state.gestures.learned.length) : undefined,
-                body: <GestureRecorder state={state} send={send} busy={setup} onTeach={teach.offer} mapping={mapping} apply={applyMapping} />,
-              },
-              { id: "profile", label: "Profile", body: <ProfileCard state={state} send={send} profiles={profiles} /> },
-              { id: "dev", label: "Dev", badge: state.dev?.recording ? "REC" : undefined, body: <DevControls state={state} send={send} /> },
-            ]}
+        <section className="camera-row" aria-label="Camera">
+          <CameraView frame={frame} state={state} size="hero" />
+        </section>
+        <div className="play-row">
+          <section className="moves-col" aria-label="Your moves">
+            <MovesPanel state={state} rows={rows} onTeach={openTeach} teachBusy={busy} />
+            <MessageBox state={state} mapping={mapping} doneAt={doneAt} hold={(mapping?.pause?.hold_ms ?? 2000) / 1000} />
+          </section>
+          <section className="paper-card controller-card" aria-label="The controller">
+            <ControllerCard state={state} mapping={mapping} />
+          </section>
+        </div>
+        <Anchor pages={pages} open={setPanel} />
+        <div className="foot-row">
+          <StatStamps state={state} />
+          <OptionsBar
+            options={options}
+            set={setOptions}
+            sound={voice || clicks}
+            setSound={(on) => {
+              setVoice(on);
+              setClicks(on);
+            }}
+            onReplayIntro={() => setScreen("intro")}
           />
-        </Blur>
+        </div>
       </main>
-      {intro && <Intro camera={frame !== null} face={state.face} engine={connection === "open"} onDone={endIntro} />}
-      {offline && lost}
-      {toast && (
-        <button className="toast paper-card" role="alert" onClick={() => setToast(null)}>
-          {toast}
-        </button>
+      {focus && (
+        <div className="layer stage-layer">
+          <div className="stage">
+            <div className="instructions">
+              <span className="instructions-label">instructions</span>
+              {card}
+            </div>
+            {withCamera && <CameraView frame={frame} state={state} size="stage" hint={calibrating ? cameraHint(state.progress) : null} />}
+          </div>
+        </div>
       )}
+      {!focus && openPage && <AnchorPanel page={openPage} close={closePanel} />}
+      {intro}
+      {offline && lost}
+      {toastEl}
     </>
   );
 }
