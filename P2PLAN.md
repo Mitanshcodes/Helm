@@ -16,7 +16,7 @@ adds an hour estimate to this file is doing it wrong.
 | `helm/mapping.py` | `Trigger` state machine, `Mapper` -> `ControlState` |
 | `helm/profiles.py` | load/save/validate calibration and mappings |
 | `helm/sipnpuff.py` | serial thread, breath level, sip/puff events |
-| `firmware/sipnpuff/sipnpuff.ino` | ESP32 streams raw pressure |
+| `firmware/sipnpuff/sipnpuff.ino`, `firmware/sipnpuff_unoq/` | Arduino streams raw pressure (classic Uno/Nano, or UNO Q) |
 | `profiles/` | committed defaults and tuned demo profiles |
 | `tests/test_output.py` `test_mapping.py` `test_profiles.py` `test_sipnpuff.py` | tests follow the module |
 | `docs/status/P2.md` | the short note teammates read |
@@ -186,20 +186,18 @@ that gate is live from the first commit.
 
 **User, on the bench (do this now, not in Phase 6):**
 
-- [ ] Wire ESP32 + MPXV7002DP and print millivolts from the Arduino serial monitor. No Helm code.
+- [ ] Wire the Arduino + MPXV7002DP and print millivolts from the Arduino serial monitor. No Helm code.
+      **Step-by-step for this is in `HARDWARE_PLAN.md`** (the board is an Arduino now, not an ESP32).
 - [ ] Confirm the reading swings both ways: puff positive, sip negative, tube on one port and the
       other port open to air.
 
 **Claude:**
 
-- [ ] **Use a 10k/10k divider, not the 10k/20k in SPEC §10.** With 10k/20k the ratio is 0.667, so
-      a max puff lands at 3.00 V — above the ESP32's usable ADC range at `ADC_11db` (~2.45 V). The
-      top of the puff range clips *at the ADC*, and soft-vs-hard puff discrimination lives exactly
-      in that clipped band, so hard puffs read as unreliable and you lose a day in the firmware.
-      10k/10k gives rest 1.25 V, max puff 2.25 V, max sip 0.25 V — all inside the linear band.
-      Log this in `decisions.md` and tell the captain the spec table needs the change.
-- [ ] Never connect the sensor's 5 V output straight to a GPIO. Sensor VCC to VIN (5 V, USB
-      powered only), GPIO34 (ADC1_CH6, input only) through the divider.
+- [x] ~~ESP32 divider choice~~ — superseded: the board is an Arduino (2026-11-14 in `decisions.md`).
+      Classic Uno/Nano: sensor OUT straight to A0, no divider. UNO Q: 10k/10k divider into A2.
+      SPEC §10 and `CLAUDE.md` are updated (captain approved).
+- [ ] Never connect the sensor output straight to a 3.3 V pin (UNO Q). Wiring and diagrams:
+      `HARDWARE_PLAN.md`, `firmware/sipnpuff/wiring_breadboard.png`.
 - [ ] Pass the cross-lane requests below to P1 *before* Phase 4 starts.
 
 **Gate:** a throwaway script steers the kart, and the serial monitor shows millivolts moving with
@@ -347,11 +345,12 @@ you write fails its own validator.
 
 Priority #10, *Should* in §2 — **but read the strategy note below before you believe that.**
 
-- [ ] **Claude:** `firmware/sipnpuff/sipnpuff.ino`. 115200 baud, every 10 ms, average 8 readings of
-      `analogReadMilliVolts(34)`, attenuation `ADC_11db`, print `P,<millis>,<millivolts>`. The
-      firmware streams raw readings and nothing else — **every threshold lives on the laptop**, so
-      you can retune without reflashing in front of a judge.
-- [ ] **Claude:** `SipPuff` — auto-detect by trying each serial port at 115200 and keeping the one
+- [x] **Claude:** firmware for both boards: `firmware/sipnpuff/sipnpuff.ino` (classic, `Serial`) and
+      `firmware/sipnpuff_unoq/sipnpuff_unoq.ino` (UNO Q, `Monitor`). Every 10 ms, average 8 readings,
+      print `P,<millis>,<sensor millivolts>` (about 2500 at rest on both). Streams raw readings only —
+      **every threshold lives on the laptop**. Not yet run on real hardware.
+- [ ] **Claude:** `SipPuff` — auto-detect by trying each serial port at 115200 (a classic Uno
+      resets on open: wait ~1.5 s for the first `P,` line before starting the baseline) and keeping the one
       sending lines that start with `P,`; baseline as the median of the first 2 s then a slow
       rolling median while no event is active; `level = (mv - baseline) / max` by sign, clamped;
       `connected` property. With no device: `level` is 0.0, `poll()` is empty, nothing else in

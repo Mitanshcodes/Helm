@@ -69,7 +69,7 @@ Default build order. Musts come before Shoulds unless the user says otherwise.
 
 ## 3. Architecture
 
-One Python process, four threads, plus the React dashboard and the ESP32.
+One Python process, four threads, plus the React dashboard and the Arduino breath sensor.
 
 ```
 Webcam -> [capture thread] -> latest frame slot
@@ -79,7 +79,7 @@ Webcam -> [capture thread] -> latest frame slot
           P1           P1             P3               P3             P2        P2
                                    |
                           latest snapshot slot -> [server: asyncio] <-> dashboard (WebSocket)
-ESP32 -> [serial thread] -> breath level + sip/puff events -> read by the pipeline thread
+Arduino -> [serial thread] -> breath level + sip/puff events -> read by the pipeline thread
 Coach agent runs in a worker thread on request and never touches the pipeline thread.
 ```
 
@@ -87,7 +87,7 @@ Coach agent runs in a worker thread on request and never touches the pipeline th
 - Pipeline thread: waits for a new frame, runs every stage in order, writes the gamepad, stamps
   `t_output_ns`, publishes a snapshot. Vision and control share this thread on purpose: control
   only has new information when a new frame has been processed.
-- Serial thread: reads the ESP32 at 100 Hz.
+- Serial thread: reads the Arduino at 100 Hz.
 - Server: uvicorn on the main thread. Broadcasts the snapshot at 30 Hz and a preview JPEG at
   15 fps; receives commands and calls `Runtime` methods.
 
@@ -126,7 +126,7 @@ helm/                         repo root
     gestures.py               P3       TakeRecorder, GestureModel (k-NN), GestureEngine
     adapt.py                  P3       FatigueTracker
     server.py                 P4       FastAPI + WebSocket, preview encoding
-  firmware/sipnpuff/sipnpuff.ino  P2   ESP32 streams raw pressure
+  firmware/sipnpuff/sipnpuff.ino  P2   Arduino streams raw pressure
   ui/                         P4       React + Vite + TypeScript dashboard
     src/App.tsx  ws.ts  types.ts  styles.css
     src/components/CameraView.tsx  Gauges.tsx  Wizard.tsx  GestureRecorder.tsx
@@ -724,19 +724,37 @@ One page. It has to read from two meters away on a judge-facing screen.
 
 ## 10. Sip-and-puff hardware (P2)
 
-Parts: ESP32 DevKit, MPXV7002DP differential pressure breakout (fallback: BMP280 sealed on the
-tube), 10 kΩ and 20 kΩ resistors, silicone tubing, disposable straws, gooseneck clamp.
+Parts: an Arduino (a classic 5 V Uno R3 or Nano preferred; an Arduino UNO Q also works),
+MPXV7002DP differential pressure breakout (fallback: BMP280 sealed on the tube), silicone tubing
+with a 3 mm inner diameter (the sensor's barbed ports are 3.3 mm; aquarium tubing leaks),
+disposable straws, gooseneck clamp. The UNO Q also needs two 10 kΩ resistors and, optionally, a
+0.1 µF capacitor.
 
-Wiring:
+Wiring, classic Uno or Nano (5 V pins, three wires, no breadboard):
 
-- Sensor VCC to the ESP32 5 V pin (VIN on USB power), GND to GND.
-- Sensor OUT through 10 kΩ to GPIO34, and GPIO34 through 20 kΩ to GND. This scales 0.5 to 4.5 V
-  down to 0.33 to 3.0 V. Never connect the 5 V output straight to a GPIO.
-- Tube on one sensor port, the other port open to air: puffs read positive, sips negative.
+- Sensor VCC to 5V, GND to GND, OUT straight to A0.
 
-Firmware (`firmware/sipnpuff/sipnpuff.ino`): at 115200 baud, every 10 ms, average 8 readings of
-`analogReadMilliVolts(34)` and print `P,<millis>,<millivolts>`. Set attenuation `ADC_11db`. The
-firmware only streams raw readings; every threshold lives on the laptop.
+Wiring, Arduino UNO Q (3.3 V pins; A0 and A1 are not 5 V tolerant):
+
+- Sensor VCC to 5V, GND to GND.
+- Sensor OUT through 10 kΩ to A2, and A2 through 10 kΩ to GND (optionally also 0.1 µF from A2 to
+  GND). This halves 0.5 to 4.5 V to 0.25 to 2.25 V, rest about 1.25 V. Never connect the sensor
+  output straight to a UNO Q pin.
+- Diagrams: `firmware/sipnpuff/wiring_breadboard.png` and `firmware/sipnpuff/schematic.png`.
+
+Both boards: tube on one sensor port, the other port open to air. Puffs read higher, sips lower;
+if they read the other way, move the tube to the other port.
+
+Firmware: `firmware/sipnpuff/sipnpuff.ino` (classic) and `firmware/sipnpuff_unoq/sipnpuff_unoq.ino`
+(UNO Q). Every 10 ms, average 8 readings and print `P,<millis>,<millivolts>`, where millivolts is
+the **sensor's** output voltage (the UNO Q sketch multiplies by 2 to undo the divider), about 2500
+at rest on either board. Classic boards print over `Serial` at 115200 baud. The UNO Q must print
+over `Monitor` (`Arduino_RouterBridge.h`), because its USB-C port belongs to the Linux side and
+`Serial` never reaches the laptop; it also must not call `pinMode` on the analog pin. The firmware
+only streams raw readings; every threshold lives on the laptop.
+
+Serial side: a classic Uno resets when the port opens, so expect about 1.5 s of silence or noise
+before the first `P,` line; start the baseline only after the first valid line.
 
 Notes:
 

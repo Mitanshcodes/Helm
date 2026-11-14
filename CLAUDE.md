@@ -2,7 +2,7 @@
 
 Hands-free game controller, built at HackPrinceton Fall '26 by a team of four in 36 hours.
 Webcam -> MediaPipe face tracking -> per-player calibration and learned gestures -> a virtual
-Xbox 360 controller that any game accepts. An optional ESP32 sip-and-puff sensor adds breath input.
+Xbox 360 controller that any game accepts. An optional Arduino sip-and-puff sensor adds breath input.
 
 Full technical spec: `docs/SPEC.md`. It is long. Read only the section you need (see below).
 
@@ -114,7 +114,10 @@ face. Reliability beats features every time.
 - Create the virtual pad before launching the game, and send one button tap after creating it,
   or the game may not see it.
 - Windows camera: open with `cv2.CAP_DSHOW`, request MJPG, set buffer size 1.
-- ESP32: use an ADC1 pin (GPIO32 to 39). The sensor output must go through the divider.
+- Breath sensor board is an Arduino, not an ESP32. Classic Uno/Nano (5 V): sensor OUT straight to
+  A0, `firmware/sipnpuff/`. UNO Q (3.3 V pins): sensor OUT through the 10k/10k divider into A2, never
+  direct, and print with `Monitor`, not `Serial`, `firmware/sipnpuff_unoq/`. Both stream
+  `P,<millis>,<sensor millivolts>`, about 2500 at rest, so the laptop side does not care which.
 - Never map a single blink. Only an eye closure longer than one second counts (pause).
 
 ## Keep `docs/status/<lane>.md` current
