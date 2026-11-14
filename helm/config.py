@@ -104,6 +104,20 @@ BREATH_BASELINE_WINDOW_S = 5.0     # rolling median window, only while no press 
 # small, which saturated level on a light breath and left the analog brake with no usable travel.
 BREATH_MAX_PUFF_MV = 1000.0
 BREATH_MAX_SIP_MV = 1800.0
+# Per-player breath calibration (BreathCalibrator). One prompted sip and one prompted puff.
+CALIB_BREATH_REST_S = 1.5          # settle, so the rolling baseline is clean before the first peak
+CALIB_BREATH_STEP_S = 4.0          # per direction; long enough for a slow lung, short enough to sit through
+# Full scale is this fraction of the single measured peak, NOT the peak itself. A player's best
+# effort is not their typical effort: the bench rig measured one person's puff at 2410, 1024 and
+# 1078 mV across three tries. Scaling to the peak would leave an ordinary puff below BREATH_HARD
+# (0.65) and the latched throttle would silently fail. Half the peak means a typical breath reads
+# as full effort and a maximal one simply clamps at 1.0, which costs nothing.
+CALIB_BREATH_FRACTION = 0.5
+# Refuse a measurement below this and keep the previous scale. A player who does not breathe during
+# the step would otherwise set full scale to a few millivolts of noise, after which resting noise
+# reads as a hard puff and latches the throttle by itself. Rest noise measured 12-40 mV p-p.
+CALIB_BREATH_MIN_MV = 200.0
+CALIB_BREATH_MAX_MV = 3000.0       # a 5 V sensor on a 10k/10k divider cannot exceed its rail
 SERIAL_PROBE_S = 3.0               # a classic Uno resets when the port opens: ~1.5 s of silence first
 SERIAL_READ_TIMEOUT_S = 0.2
 SERIAL_RECONNECT_S = 1.0           # wait before retrying after an unplugged cable

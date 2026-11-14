@@ -8,7 +8,7 @@ import time
 from collections import deque
 
 from helm import config
-from helm.contracts import SipPuffEvent
+from helm.contracts import Progress, SipPuffEvent
 
 _log = logging.getLogger(__name__)
 
@@ -104,6 +104,10 @@ class SipPuff:
         self._open_port: str | None = None
         self._max_puff_mv = config.BREATH_MAX_PUFF_MV
         self._max_sip_mv = config.BREATH_MAX_SIP_MV
+        # Largest displacement either way since reset_peaks(), in millivolts, both positive.
+        # Raw displacement, not level: the point of measuring is that the level scale is wrong.
+        self._peak_puff_mv = 0.0
+        self._peak_sip_mv = 0.0
         self._warned = False
 
     # ---- called from the pipeline thread; never blocks on I/O --------------------------------
@@ -125,6 +129,23 @@ class SipPuff:
         with self._lock:
             events, self._events = self._events, []
             return events
+
+    @property
+    def peaks(self) -> tuple[float, float]:
+        """(puff, sip) largest displacement since reset_peaks(), millivolts, both positive."""
+        with self._lock:
+            return self._peak_puff_mv, self._peak_sip_mv
+
+    @property
+    def scales(self) -> tuple[float, float]:
+        """(max_puff_mv, max_sip_mv) currently in force: config defaults, or a calibrated player."""
+        with self._lock:
+            return self._max_puff_mv, self._max_sip_mv
+
+    def reset_peaks(self) -> None:
+        with self._lock:
+            self._peak_puff_mv = 0.0
+            self._peak_sip_mv = 0.0
 
     def calibrate(self, max_puff_mv: float, max_sip_mv: float) -> None:
         """Set the player's own maxima, as positive displacements from baseline."""
@@ -261,9 +282,12 @@ class SipPuff:
             else:
                 window.clear()
 
+            displacement = mv - detector.baseline_mv
             with self._lock:
                 self._level = detector.level
                 self._last_sample_s = now
+                self._peak_puff_mv = max(self._peak_puff_mv, displacement)
+                self._peak_sip_mv = max(self._peak_sip_mv, -displacement)
                 if event is not None:
                     self._events.append(event)
 
@@ -291,6 +315,89 @@ class SipPuff:
             self._open_port = None
             self._detector = None
             self._level = 0.0
+
+
+class BreathCalibrator:
+    """Measures one player's sip and puff range, as a timed prompted flow (docs/SPEC.md 6.5, 6.10).
+
+    Deliberately shaped like `calibration.Calibrator` -- `feed()` returns a `Progress` and sets
+    `done` -- so the runtime drives it with the same three lines it already uses for the face
+    wizard, and the dashboard renders its prompts with no UI change at all.
+
+    It is not part of `Calibration`: that contract is frozen and has no breath fields, and breath
+    range is a property of the sensor and the player's lungs rather than of their face. It persists
+    separately through `profiles.save_breath`.
+
+    Pure timing plus latest-value reads from `SipPuff`. No I/O, so it is safe on the pipeline
+    thread; persisting the result is the caller's job and belongs off that thread.
+    """
+
+    # step name, seconds, prompt, which peak it reads ("" settles the baseline and reads nothing)
+    _STEPS = (
+        ("breath_rest", config.CALIB_BREATH_REST_S, "Hands off the tube, breathe normally", ""),
+        ("breath_sip", config.CALIB_BREATH_STEP_S, "Sip hard on the tube, like a thick straw, and hold", "sip"),
+        ("breath_puff", config.CALIB_BREATH_STEP_S, "Now puff hard into the tube, and hold", "puff"),
+    )
+
+    def __init__(self, sip: "SipPuff"):
+        self._sip = sip
+        self._i = 0
+        self._started_s: float | None = None
+        self._done_s = 0.0
+        self._total_s = sum(s[1] for s in self._STEPS)
+        self._measured: dict[str, float] = {}
+        self.done = False
+        self.notes: list[str] = []
+
+    def feed(self, t_s: float) -> Progress:
+        """Advance on the frame's own timestamp. Returns the prompt to show the player."""
+        if self.done:
+            return Progress(active=False, step="done", prompt="Breath range set", progress=1.0,
+                            overall=1.0, done=True)
+        name, duration, prompt, measures = self._STEPS[self._i]
+        if self._started_s is None:
+            self._started_s = t_s
+            self._sip.reset_peaks()
+        elapsed = max(0.0, t_s - self._started_s)
+
+        if elapsed >= duration:
+            if measures:
+                puff, sip = self._sip.peaks
+                self._measured[measures] = puff if measures == "puff" else sip
+            self._done_s += duration
+            self._i += 1
+            self._started_s = None
+            if self._i == len(self._STEPS):
+                self.done = True
+                return self.feed(t_s)
+            name, duration, prompt, measures = self._STEPS[self._i]
+            elapsed = 0.0
+
+        return Progress(active=True, step=name, prompt=prompt,
+                        progress=min(elapsed / duration, 1.0),
+                        overall=min((self._done_s + elapsed) / self._total_s, 1.0))
+
+    def result(self) -> tuple[float, float]:
+        """(max_puff_mv, max_sip_mv) to hand to `SipPuff.calibrate`.
+
+        A direction that measured too little to be a real breath keeps the current scale and is
+        reported in `notes`. Without that floor a player who ignored the step would set full scale
+        to a few millivolts of rest noise, and the sensor would then drive the pad on its own.
+        """
+        current_puff, current_sip = self._sip.scales
+        self.notes = []                 # idempotent: a second call must not double the notes
+        out = []
+        for direction, current in (("puff", current_puff), ("sip", current_sip)):
+            peak = self._measured.get(direction, 0.0)
+            if peak < config.CALIB_BREATH_MIN_MV:
+                self.notes.append(
+                    f"{direction.capitalize()} measured only {peak:.0f} mV, too little to trust; "
+                    f"keeping the previous range. Check the tube is on the sensor port.")
+                out.append(current)
+                continue
+            scaled = min(peak * config.CALIB_BREATH_FRACTION, config.CALIB_BREATH_MAX_MV)
+            out.append(max(scaled, 1.0))
+        return out[0], out[1]
 
 
 def _candidate_ports(ports) -> list[str]:

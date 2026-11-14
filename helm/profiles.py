@@ -66,6 +66,33 @@ def save_calibration(c: Calibration) -> None:
     _write_json(_ROOT / c.player / "calibration.json", asdict(c))
 
 
+def load_breath(player: str) -> tuple[float, float] | None:
+    """(max_puff_mv, max_sip_mv) for this player, or None to use the config defaults.
+
+    Breath range lives beside the calibration rather than inside it: `Calibration` is frozen and
+    has no breath fields, and the range describes the player's lungs and this particular sensor,
+    not their face. Shared identities never persist it, for the same reason they never persist a
+    calibration -- the next stranger must not inherit the last one's lung strength.
+    """
+    if player in SHARED_PLAYERS:
+        return None
+    try:
+        data = json.loads((_ROOT / player / "breath.json").read_text())
+        puff, sip = float(data["max_puff_mv"]), float(data["max_sip_mv"])
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+    if not (0.0 < puff <= config.CALIB_BREATH_MAX_MV and 0.0 < sip <= config.CALIB_BREATH_MAX_MV):
+        return None          # a corrupt range would drive the pad on its own; fall back to defaults
+    return puff, sip
+
+
+def save_breath(player: str, max_puff_mv: float, max_sip_mv: float) -> None:
+    if player in SHARED_PLAYERS:
+        return
+    _write_json(_ROOT / player / "breath.json",
+                {"max_puff_mv": float(max_puff_mv), "max_sip_mv": float(max_sip_mv)})
+
+
 def load_mapping(player: str, game: str) -> dict:
     """Falls back to default_mapping(game) when the player has no mapping for it."""
     path = _ROOT / player / f"{game}.json"
@@ -240,7 +267,8 @@ def list_profiles() -> dict[str, list[str]]:
     for folder in sorted(_ROOT.iterdir()):
         if not folder.is_dir() or folder.name.startswith("_"):
             continue
-        games = sorted(f.stem for f in folder.glob("*.json") if f.stem != "calibration")
+        games = sorted(f.stem for f in folder.glob("*.json")
+                       if f.stem not in ("calibration", "breath"))
         if games:
             found[folder.name] = games
     return found

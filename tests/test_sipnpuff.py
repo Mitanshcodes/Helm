@@ -390,3 +390,117 @@ def test_ports_are_ordered_arduino_first_and_bluetooth_skipped():
              P(device="COM3", description="Intel Serial", vid=0x8086),
              P(device="/dev/cu.usbmodem3994", description="UNO Q", vid=0x2341)]
     assert sipnpuff._candidate_ports(ports) == ["/dev/cu.usbmodem3994", "COM3"]
+
+
+# ------------------------------------------------------------ BreathCalibrator and breath range
+from helm.sipnpuff import BreathCalibrator
+
+
+def walk(cal, sip, *, sip_mv=0.0, puff_mv=0.0, fps=30.0):
+    """Drive the calibrator to completion, faking peaks while its prompt asks for them."""
+    t, seen = 0.0, []
+    while not cal.done and t < 60.0:
+        progress = cal.feed(t)
+        seen.append(progress.step)
+        if progress.step == "breath_sip":
+            sip._peak_sip_mv = sip_mv
+        elif progress.step == "breath_puff":
+            sip._peak_puff_mv = puff_mv
+        t += 1.0 / fps
+    return seen, t
+
+
+def test_breath_calibrator_prompts_rest_then_sip_then_puff():
+    sip = SipPuff(None)
+    steps, _ = walk(BreathCalibrator(sip), sip, sip_mv=2400.0, puff_mv=900.0)
+    ordered = [s for i, s in enumerate(steps) if i == 0 or s != steps[i - 1]]
+    assert ordered == ["breath_rest", "breath_sip", "breath_puff", "done"]
+
+
+def test_breath_calibrator_scales_to_half_the_measured_peak():
+    """A player's best effort is not their typical effort; see config.CALIB_BREATH_FRACTION."""
+    sip = SipPuff(None)
+    cal = BreathCalibrator(sip)
+    walk(cal, sip, sip_mv=2400.0, puff_mv=900.0)
+    assert cal.result() == (450.0, 1200.0)
+    assert cal.notes == []
+
+
+def test_a_typical_puff_clears_hard_after_calibration():
+    """The defect this whole flow exists to prevent: a measured peak that leaves an ordinary
+    puff below BREATH_HARD, so the latched throttle silently never fires."""
+    sip = SipPuff(None)
+    cal = BreathCalibrator(sip)
+    walk(cal, sip, sip_mv=2400.0, puff_mv=2410.0)        # the bench rig's best puff
+    max_puff, _ = cal.result()
+    ordinary_puff_mv = 1024.0                            # the same person's next two tries
+    assert ordinary_puff_mv / max_puff > config.BREATH_HARD
+
+
+def test_breath_calibrator_keeps_the_old_scale_when_nobody_breathes():
+    """Without this floor, rest noise becomes full scale and the sensor drives the pad by itself."""
+    sip = SipPuff(None)
+    sip.calibrate(1000.0, 1800.0)
+    cal = BreathCalibrator(sip)
+    walk(cal, sip, sip_mv=30.0, puff_mv=20.0)            # measured rest noise is 12-40 mV p-p
+    assert cal.result() == (1000.0, 1800.0)
+    assert len(cal.notes) == 2 and "too little to trust" in cal.notes[0]
+
+
+def test_breath_calibrator_result_is_idempotent():
+    sip = SipPuff(None)
+    cal = BreathCalibrator(sip)
+    walk(cal, sip, sip_mv=10.0, puff_mv=10.0)
+    first = cal.result()
+    assert cal.result() == first and len(cal.notes) == 2
+
+
+def test_breath_calibrator_clamps_an_impossible_peak():
+    sip = SipPuff(None)
+    cal = BreathCalibrator(sip)
+    walk(cal, sip, sip_mv=99999.0, puff_mv=99999.0)
+    assert cal.result() == (config.CALIB_BREATH_MAX_MV, config.CALIB_BREATH_MAX_MV)
+
+
+def test_breath_calibrator_reports_progress_and_finishes():
+    sip = SipPuff(None)
+    cal = BreathCalibrator(sip)
+    _, elapsed = walk(cal, sip, sip_mv=2400.0, puff_mv=900.0)
+    assert cal.done and elapsed < 12.0
+    final = cal.feed(elapsed)
+    assert final.done and final.overall == 1.0 and not final.active
+
+
+def test_peaks_track_the_largest_displacement_either_way(monkeypatch, fast_breath):
+    install_fake_serial(monkeypatch, {"/dev/real": FakePort(
+        rest(20) + press(20, 2900) + rest(10) + press(20, 2100) + rest(40))})
+    pad = SipPuff("/dev/real")
+    pad.start()
+    try:
+        assert wait_for(lambda: pad.peaks[0] > 300 and pad.peaks[1] > 300), f"peaks {pad.peaks}"
+        puff, sip = pad.peaks
+        assert puff == pytest.approx(400, abs=60) and sip == pytest.approx(400, abs=60)
+        pad.reset_peaks()
+        assert pad.peaks == (0.0, 0.0)
+    finally:
+        pad.stop()
+
+
+def test_breath_range_round_trips_but_never_for_a_shared_identity(tmp_path, monkeypatch):
+    from helm import profiles
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    profiles.save_breath("sam", 1234.0, 2345.0)
+    assert profiles.load_breath("sam") == (1234.0, 2345.0)
+    profiles.save_breath("judge", 1234.0, 2345.0)
+    assert profiles.load_breath("judge") is None
+    assert not (tmp_path / "judge").exists()
+
+
+def test_a_corrupt_breath_range_falls_back_to_defaults(tmp_path, monkeypatch):
+    from helm import profiles
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    (tmp_path / "sam").mkdir()
+    for payload in ('{"max_puff_mv": 0, "max_sip_mv": 100}', '{"max_puff_mv": 1e9, "max_sip_mv": 1}',
+                    "not json", '{"max_puff_mv": "x", "max_sip_mv": 1}', "{}"):
+        (tmp_path / "sam" / "breath.json").write_text(payload)
+        assert profiles.load_breath("sam") is None, payload

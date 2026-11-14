@@ -587,3 +587,77 @@ not a P2 decision, but P2 is the one holding the affected work, so:
 9. `git pull --rebase`, smoke run again, then commit as `P2: <what changed>`.
 
 Never push a `main` that fails the smoke run.
+
+## Cross-lane request to P1 — wire breath calibration into the calibration flow
+
+**Why:** `BREATH_MAX_PUFF_MV` / `BREATH_MAX_SIP_MV` in `config.py` are one person's measured lungs,
+applied to every stranger who sits down. Measured spread on one person's puff was 2410 / 1024 /
+1078 mV, so a weaker player can fail to clear `BREATH_HARD` and the latched throttle then **silently
+never fires** — no error, nothing on screen. P2 has built the measurement; only the runtime hook is
+left, and it is in P1's file.
+
+**What P2 provides (all landed, tested, inert until called):**
+
+- `sipnpuff.BreathCalibrator(sip)` — shaped deliberately like `calibration.Calibrator`:
+  `feed(t_s) -> Progress`, `.done`, `.result() -> (max_puff_mv, max_sip_mv)`, `.notes`.
+  Three timed prompts (rest, sip, puff), about 9.5 s total. Pure timing plus latest-value reads;
+  no I/O, safe on the pipeline thread. **The dashboard needs no change** — it already renders
+  `Progress.prompt`, so P4 is not involved.
+- `SipPuff.peaks` / `.reset_peaks()` / `.scales`, and the existing `SipPuff.calibrate()`.
+- `profiles.load_breath(player)` / `save_breath(player, puff, sip)` -> `profiles/<player>/breath.json`.
+  Shared identities (`guest`, `judge`) never persist, same rule as calibration. A corrupt or
+  out-of-range file falls back to the config defaults rather than driving the pad.
+- A measurement below `CALIB_BREATH_MIN_MV` (200 mV) is refused and the previous scale kept, with a
+  reason in `.notes`. Without that floor, a player who ignores the step sets full scale to rest
+  noise (12-40 mV) and the sensor then latches the throttle by itself.
+
+**The six edits, against current `main.py`:**
+
+1. Import: `from helm.sipnpuff import BreathCalibrator, SipPuff`.
+2. Beside `self._calibrator = None` (~line 155): `self._breath_cal: BreathCalibrator | None = None`.
+3. After `self._calib = profiles.load_calibration(self.player)` (~line 143):
+
+   ```python
+   breath = profiles.load_breath(self.player)
+   if breath:
+       self._sip.calibrate(*breath)
+   ```
+
+4. In the `progress.done` branch of the face wizard (~line 383, after the `calibration_done`
+   event), chain the breath flow only when a sensor is actually attached:
+
+   ```python
+   if self._sip.connected:
+       self._breath_cal = BreathCalibrator(self._sip)
+   ```
+
+5. Directly after that `if self._calibrator is not None:` block, mirroring its shape:
+
+   ```python
+   elif self._breath_cal is not None:
+       progress = self._breath_cal.feed(t_s)
+       if progress.done:
+           max_puff, max_sip = self._breath_cal.result()
+           notes = self._breath_cal.notes
+           self._breath_cal = None
+           self._sip.calibrate(max_puff, max_sip)
+           self._worker(profiles.save_breath, self.player, max_puff, max_sip)
+           self._event("breath_calibration_done",
+                       {"max_puff_mv": max_puff, "max_sip_mv": max_sip, "notes": notes})
+   ```
+
+6. **Safety, do not skip:** add `self._breath_cal is not None` to the `neutral` guard (~line 404).
+   The player is told to sip and puff as hard as they can; without this the calibration sip slams
+   the brake and the calibration puff latches the throttle. Also set `self._breath_cal = None` in
+   `_do_calibrate` and `_do_record` so a restart cancels it, and in `_do_apply_profile` apply the
+   new player's range (falling back to the config defaults, so a calibrated player's range is not
+   inherited by the next one):
+
+   ```python
+   breath = profiles.load_breath(player)
+   self._sip.calibrate(*(breath or (config.BREATH_MAX_PUFF_MV, config.BREATH_MAX_SIP_MV)))
+   ```
+
+**Open decision for the captain:** this adds ~9.5 s to the stranger-sits-down path, and only when a
+sensor is connected. `CALIB_BREATH_STEP_S` shortens it; dropping the rest step saves 1.5 s at the
+cost of a noisier baseline.

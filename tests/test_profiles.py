@@ -294,7 +294,7 @@ _PROFILES = Path(__file__).resolve().parent.parent / "profiles"
 # Mappings only: calibration.json is not a mapping, and `guest` is the throwaway player that a
 # run creates and .gitignore excludes (docs/SPEC.md 7).
 COMMITTED = sorted(f for f in _PROFILES.rglob("*.json")
-                   if f.stem != "calibration" and f.parent.name != "guest")
+                   if f.stem not in ("calibration", "breath") and f.parent.name != "guest")
 
 
 def calibrated_player():
