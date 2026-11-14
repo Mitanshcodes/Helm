@@ -137,9 +137,11 @@ class FakePort:
         self._per_line_s = per_line_s
         self._raise_after = raise_after
         self._served = 0
+        self.calls = 0
         self.closed = False
 
     def readline(self):
+        self.calls += 1
         if self._raise_after is not None and self._served >= self._raise_after:
             raise OSError("device disconnected")
         time.sleep(self._per_line_s)
@@ -184,6 +186,9 @@ def fast_breath(monkeypatch):
     # The real 80 ms press debounce would force long paced line streams here. BreathDetector's own
     # tests cover that rule with synthetic time; these tests are about the serial plumbing.
     monkeypatch.setattr(config, "BREATH_MIN_PRESS_MS", 10)
+    # FakePort serves lines faster than any real board, which the backlog drain would read as a
+    # stale queue. Draining has its own test below; everywhere else it is switched off.
+    monkeypatch.setattr(config, "SERIAL_DRAIN_MAX_S", 0.0)
 
 
 def rest(n, mv=2500):
@@ -309,3 +314,73 @@ def test_missing_pyserial_is_survivable(monkeypatch, fast_breath):
         assert pad._thread.is_alive()
     finally:
         pad.stop()
+
+
+class TimedPort(FakePort):
+    """Each line carries its own delay: 0 for a buffered backlog, a few ms for live samples."""
+
+    def __init__(self, timed_lines):
+        super().__init__([line for line, _ in timed_lines])
+        self._delays = [delay for _, delay in timed_lines]
+
+    def readline(self):
+        self.calls += 1
+        if self._lines:
+            time.sleep(self._delays.pop(0))
+            return self._lines.pop(0).encode()
+        time.sleep(0.004)
+        return b""
+
+
+def test_uno_q_backlog_is_drained_before_the_baseline(monkeypatch, fast_breath):
+    # The UNO Q queues lines while the port is closed and dumps them all on open. Here the stale
+    # queue is a long puff. Without draining, the baseline would be learned from that puff and
+    # the real resting pressure afterwards would read as a hard sip.
+    monkeypatch.setattr(config, "SERIAL_DRAIN_MAX_S", 2.0)
+    monkeypatch.setattr(config, "SERIAL_LIVE_GAP_MS", 3.0)
+    monkeypatch.setattr(config, "SERIAL_LIVE_STREAK", 5)
+    backlog = [(line, 0.0) for line in press(200, 2900, start=0)]
+    live = ([(line, 0.004) for line in rest(40)]
+            + [(line, 0.004) for line in press(20, 2900, start=5000)]
+            + [(line, 0.004) for line in rest(20)])
+    install_fake_serial(monkeypatch, {"/dev/unoq": TimedPort(backlog + live)})
+    sip = SipPuff("auto")
+    sip.start()
+    try:
+        deadline = time.monotonic() + 3.0
+        events = []
+        while time.monotonic() < deadline and not events:
+            events += sip.poll()
+            time.sleep(0.01)
+        time.sleep(0.15)
+        events += sip.poll()
+        assert [e.kind for e in events] == ["hard_puff"]
+        assert abs(sip.level) < 0.1
+    finally:
+        sip.stop()
+
+
+def test_dead_port_does_not_spin_the_cpu(monkeypatch, fast_breath):
+    # A read error must close the port and back off, not retry in a tight loop: a spinning serial
+    # thread holds the GIL and makes the whole pipeline lag.
+    port = FakePort(rest(30), raise_after=30)
+    install_fake_serial(monkeypatch, {"/dev/real": port})
+    sip = SipPuff("/dev/real")
+    sip.start()
+    try:
+        time.sleep(0.2)
+        before = port.calls
+        time.sleep(0.5)
+        assert port.calls - before < 200
+        assert not sip.connected
+        assert sip.level == 0.0
+    finally:
+        sip.stop()
+
+
+def test_ports_are_ordered_arduino_first_and_bluetooth_skipped():
+    from types import SimpleNamespace as P
+    ports = [P(device="/dev/cu.Bluetooth-Incoming-Port", description="n/a", vid=None),
+             P(device="COM3", description="Intel Serial", vid=0x8086),
+             P(device="/dev/cu.usbmodem3994", description="UNO Q", vid=0x2341)]
+    assert sipnpuff._candidate_ports(ports) == ["/dev/cu.usbmodem3994", "COM3"]

@@ -183,7 +183,7 @@ class SipPuff:
             self._stop.wait(config.SERIAL_RECONNECT_S)
             return None
 
-        names = [self.port] if self.port != "auto" else [p.device for p in list_ports.comports()]
+        names = [self.port] if self.port != "auto" else _candidate_ports(list_ports.comports())
         for name in names:
             if self._stop.is_set():
                 return None
@@ -205,7 +205,11 @@ class SipPuff:
             return None
         deadline = time.monotonic() + config.SERIAL_PROBE_S
         while time.monotonic() < deadline and not self._stop.is_set():
-            if parse_line(_read_line(port)) is not None:
+            try:
+                line = port.readline().decode("ascii", "ignore")
+            except Exception:                       # dead port: give up now, don't spin on it
+                break
+            if parse_line(line) is not None:
                 return port
         try:
             port.close()
@@ -214,23 +218,32 @@ class SipPuff:
         return None
 
     def _read_until_lost(self, port) -> None:
+        """Read until the cable goes or the port falls silent; any exception means reconnect."""
+        self._drain_backlog(port)
         samples: list[float] = []
-        baseline_deadline = time.monotonic() + config.BREATH_BASELINE_S
+        baseline_deadline: float | None = None
         window: deque[float] = deque(maxlen=int(config.BREATH_BASELINE_WINDOW_S * 100))
         detector: BreathDetector | None = None
+        last_valid = time.monotonic()
 
         while not self._stop.is_set():
-            mv = parse_line(_read_line(port))
-            if mv is None:
-                continue
+            # No try/except here on purpose: a yanked cable raises, and _run closes the port and
+            # reconnects. Swallowing the error would spin this thread at full CPU on a dead port.
+            mv = parse_line(port.readline().decode("ascii", "ignore"))
             now = time.monotonic()
+            if mv is None:
+                if now - last_valid > config.SERIAL_LOST_S:
+                    raise OSError("breath sensor stopped sending")
+                continue
+            last_valid = now
             # Host monotonic milliseconds, never the board's millis(): it resets on reconnect and
             # BreathDetector rejects a backwards timestamp.
             t_ms = now * 1000.0
 
             if detector is None:
-                # Baseline starts at the first valid line, not at open: a classic Uno spends its
-                # first ~1.5 s resetting, and that noise must not land in the median.
+                # The baseline clock starts at the first live line, after the backlog is gone.
+                if baseline_deadline is None:
+                    baseline_deadline = now + config.BREATH_BASELINE_S
                 samples.append(mv)
                 if now < baseline_deadline:
                     continue
@@ -254,11 +267,45 @@ class SipPuff:
                 if event is not None:
                     self._events.append(event)
 
+    def _drain_backlog(self, port) -> None:
+        """Throw away lines the board buffered while nobody was listening.
+
+        The UNO Q's Linux side keeps queueing lines while the port is closed and delivers the whole
+        queue on open: over a minute of stale pressure arriving at ~1500 lines/s. Buffered lines come
+        back from readline() instantly; live ones make it wait for the next sample (10 to 15 ms). So
+        the backlog is gone once several reads in a row had to wait. A classic Uno has no backlog
+        and passes this in a few lines.
+        """
+        deadline = time.monotonic() + config.SERIAL_DRAIN_MAX_S
+        streak = 0
+        while streak < config.SERIAL_LIVE_STREAK and time.monotonic() < deadline:
+            if self._stop.is_set():
+                return
+            t0 = time.monotonic()
+            port.readline()                         # errors propagate: unplugged mid-drain
+            waited_ms = (time.monotonic() - t0) * 1000.0
+            streak = streak + 1 if waited_ms >= config.SERIAL_LIVE_GAP_MS else 0
+
     def _go_idle(self) -> None:
         with self._lock:
             self._open_port = None
             self._detector = None
             self._level = 0.0
+
+
+def _candidate_ports(ports) -> list[str]:
+    """Arduino-looking ports first; Bluetooth ports skipped (on Windows they can hang on open)."""
+    arduino_vids = {0x2341, 0x2A03, 0x1A86}          # Arduino, Arduino.org, CH340 clones
+    likely, other = [], []
+    for p in ports:
+        label = f"{p.device} {getattr(p, 'description', '') or ''}".lower()
+        if "bluetooth" in label:
+            continue
+        if getattr(p, "vid", None) in arduino_vids or "arduino" in label or "usbmodem" in label:
+            likely.append(p.device)
+        else:
+            other.append(p.device)
+    return likely + other
 
 
 def _read_line(port) -> str:

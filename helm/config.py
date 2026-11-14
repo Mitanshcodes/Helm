@@ -81,6 +81,10 @@ SERIAL_PROBE_S = 3.0               # a classic Uno resets when the port opens: ~
 SERIAL_READ_TIMEOUT_S = 0.2
 SERIAL_RECONNECT_S = 1.0           # wait before retrying after an unplugged cable
 SERIAL_STALE_S = 1.0               # no valid line for this long -> report not connected
+SERIAL_LOST_S = 3.0                # no valid line for this long -> close the port and reconnect
+SERIAL_DRAIN_MAX_S = 15.0          # give up draining a UNO Q backlog after this long
+SERIAL_LIVE_GAP_MS = 3.0           # a readline that waited this long means the line was live
+SERIAL_LIVE_STREAK = 5             # this many live reads in a row ends the drain
 
 # ------------------------------------------------------------------ P3: learning and evaluation
 KNN_NEIGHBORS = 7
