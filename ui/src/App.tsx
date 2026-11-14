@@ -207,7 +207,7 @@ export default function App() {
           </div>
           <div className="dash-output">
             <OutputCard state={state} mapping={mapping} />
-            <SipPuffCard state={state} mapping={mapping} />
+            <SipPuffCard state={state} mapping={mapping} send={send} />
           </div>
         </div>
         {!OVERLAY && (

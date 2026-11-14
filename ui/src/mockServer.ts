@@ -2,7 +2,7 @@
 // In-browser stand-in for the Python server (?mock=1 or VITE_MOCK=1). It speaks the protocol of docs/SPEC.md
 // section 8 with made-up data, so the whole dashboard can be built and shown with no backend running.
 import { BROW_A, BROW_B, EYE_A, EYE_B, FACE_OVAL, LIPS, N_LANDMARKS } from "./mesh";
-import type { Command, HelmState, Mapping, Progress } from "./types";
+import type { Command, EventMsg, HelmState, Mapping, Progress } from "./types";
 import type { HelmSocket, OnMessage, OnStatus } from "./ws";
 
 const HZ = 30;
@@ -60,6 +60,12 @@ const PROFILES: Record<string, string[]> = {
 export const mockProfiles = async () => PROFILES;
 
 type Step = { step: string; prompt: string; seconds: number };
+// Mirrors sipnpuff.BreathCalibrator's three steps, so the dashboard can be developed with no board.
+const BREATH_CALIBRATION: Step[] = [
+  { step: "breath_rest", prompt: "Hands off the tube, breathe normally", seconds: 1.5 },
+  { step: "breath_sip", prompt: "Sip hard on the tube, like a thick straw, and hold", seconds: 4 },
+  { step: "breath_puff", prompt: "Now puff hard into the tube, and hold", seconds: 4 },
+];
 const CALIBRATION: Step[] = [
   { step: "neutral", prompt: "Look at the screen and relax your face", seconds: 3 },
   { step: "yaw_left", prompt: "Turn your head left as far as is comfortable, and hold", seconds: 2.5 },
@@ -121,7 +127,7 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
   const timers: number[] = [];
 
   const later = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-  const event = (name: "calibration_done" | "gesture_trained" | "coach_result" | "profile_loaded" | "error", data: Record<string, unknown>) =>
+  const event = (name: EventMsg["name"], data: Record<string, unknown>) =>
     onMessage({ type: "event", name, data });
   const run = (steps: Step[], done: () => void) => (script = { steps, started: performance.now(), done });
 
@@ -234,10 +240,18 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
     send(cmd: Command) {
       if (cmd.cmd === "pause") paused = cmd.on;
       else if (cmd.cmd === "calibrate") {
-        run(cmd.mode === "quick" ? CALIBRATION.slice(0, 1) : CALIBRATION, () => {
-          calibrated = cmd.mode;
-          event("calibration_done", { mode: cmd.mode });
-        });
+        if (cmd.mode === "breath") {
+          // Breath range is not face calibration: `calibrated` tracks the face wizard only.
+          run(BREATH_CALIBRATION, () =>
+            event("breath_calibration_done", { max_puff_mv: 1205, max_sip_mv: 1180, notes: [] }),
+          );
+        } else {
+          const mode = cmd.mode;
+          run(mode === "quick" ? CALIBRATION.slice(0, 1) : [...CALIBRATION, ...BREATH_CALIBRATION], () => {
+            calibrated = mode;
+            event("calibration_done", { mode });
+          });
+        }
       } else if (cmd.cmd === "record_gesture") {
         run(takes(cmd.name), () => {
           if (!learned.includes(cmd.name)) learned = [...learned, cmd.name];

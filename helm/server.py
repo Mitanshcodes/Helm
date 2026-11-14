@@ -79,8 +79,8 @@ def handle_command(runtime: "Runtime", text: str) -> dict | None:
                 return _error('Dev command needs on: true or false', cmd=cmd)
             getattr(runtime, cmd)(msg['on'])
         elif cmd == "calibrate":
-            if msg.get("mode") not in ("full", "quick"):
-                return _error('calibrate needs "mode": "full" or "quick"', cmd=cmd)
+            if msg.get("mode") not in ("full", "quick", "breath"):
+                return _error('calibrate needs "mode": "full", "quick" or "breath"', cmd=cmd)
             runtime.start_calibration(msg["mode"])
         elif cmd == "record_gesture":
             name = name_of("name", _GESTURE_NAME)

@@ -27,7 +27,7 @@ from helm.gestures import GestureEngine, GestureModel, TakeRecorder
 from helm.mapping import Mapper
 from helm.mock import MockSource, Recorder, ReplaySource, render_preview
 from helm.output import make_gamepad
-from helm.sipnpuff import SipPuff
+from helm.sipnpuff import BreathCalibrator, SipPuff
 from helm.vision import FaceTracker
 
 log = logging.getLogger("helm")
@@ -142,6 +142,7 @@ class Runtime:
         self._pad = make_gamepad(args.output)
         self._sip = SipPuff(None if args.serial == "off" else args.serial)
         self._calib = profiles.load_calibration(self.player)
+        self._apply_breath_range(self.player)
         self._mapping = profiles.load_mapping(self.player, self.game)
         self._model = _load_model(self.player)
         self._normalizer = Normalizer(self._calib)
@@ -154,6 +155,7 @@ class Runtime:
 
         # Pipeline-thread state.
         self._calibrator: Calibrator | None = None
+        self._breath_cal: BreathCalibrator | None = None
         self._take_recorder: TakeRecorder | None = None
         self._last_idle = True
         self._last_face_ns = 0
@@ -228,8 +230,12 @@ class Runtime:
     # ------------------------------------------------------------------ called by server.py (asyncio thread)
 
     def start_calibration(self, mode: str) -> None:
-        if mode not in ("full", "quick"):
-            self._event("error", {"message": f"calibration mode must be full or quick, not {mode!r}"})
+        if mode not in ("full", "quick", "breath"):
+            self._event("error",
+                        {"message": f"calibration mode must be full, quick or breath, not {mode!r}"})
+            return
+        if mode == "breath" and not self._sip.connected:
+            self._event("error", {"message": "No breath sensor is connected"})
             return
         self._request("calibrate", mode)
 
@@ -403,6 +409,21 @@ class Runtime:
                 self._event("calibration_done", {"mode": self._calib.mode, "reliable": list(self._calib.reliable),
                                                  "range": {a: list(r) for a, r in self._calib.range.items()},
                                                  "notes": notes})
+                # Breath range is measured straight after the face, while the player is still in
+                # calibration mode, and only when a sensor is actually attached.
+                if self._sip.connected:
+                    self._breath_cal = BreathCalibrator(self._sip)
+                    progress = self._breath_cal.feed(t_s)
+        elif self._breath_cal is not None:
+            progress = self._breath_cal.feed(t_s)
+            if progress.done:
+                max_puff, max_sip = self._breath_cal.result()
+                notes = self._breath_cal.notes
+                self._breath_cal = None
+                self._sip.calibrate(max_puff, max_sip)
+                self._worker(profiles.save_breath, self.player, max_puff, max_sip)
+                self._event("breath_calibration_done",
+                            {"max_puff_mv": max_puff, "max_sip_mv": max_sip, "notes": notes})
                 progress = None
 
         s = self._normalizer.update(f, breath=self._sip.level, idle=self._last_idle)
@@ -422,7 +443,11 @@ class Runtime:
         if f.face:
             self._last_face_ns = now
         face_lost = now - self._last_face_ns > config.FACE_LOST_MS * 1_000_000
-        neutral = face_lost or self._calibrator is not None or self._take_recorder is not None or state.paused
+        # The breath calibrator tells the player to sip and puff as hard as they can: without it
+        # in this guard, the calibration sip slams the brake and the calibration puff latches the
+        # throttle while they are doing it.
+        neutral = (face_lost or self._calibrator is not None or self._breath_cal is not None
+                   or self._take_recorder is not None or state.paused)
         out = ControlState(t_output_ns=state.t_output_ns, paused=state.paused) if neutral else state
         self._pad.apply(out)
         t_output_ns = time.perf_counter_ns()
@@ -497,13 +522,21 @@ class Runtime:
         self._dev_sessions.append(self._dev_session)
 
     def _do_calibrate(self, mode: str) -> None:
-        self._start_dev_capture('calibration')
         self._take_recorder = None
+        if mode == "breath":
+            # No dev capture: there is nothing facial to record, and labelling it 'calibration'
+            # would put breath takes in the face dataset.
+            self._calibrator = None
+            self._breath_cal = BreathCalibrator(self._sip)
+            return
+        self._start_dev_capture('calibration')
+        self._breath_cal = None
         self._calibrator = Calibrator(self.player, mode)
 
     def _do_record(self, name: str | None) -> None:
         self._start_dev_capture('gesture' if name else 'negative', name)
         self._calibrator = None
+        self._breath_cal = None
         self._take_recorder = TakeRecorder(name)
 
     def _do_delete_gesture(self, name: str) -> None:
@@ -522,6 +555,8 @@ class Runtime:
             self._dev_session.finish('profile_changed')
             self._dev_session = None
         self.player, self.game = player, game
+        self._breath_cal = None
+        self._apply_breath_range(player)
         self._calib, self._mapping, self._model = calib, mapping, model
         self._normalizer = Normalizer(calib)
         self._fatigue = FatigueTracker()
@@ -529,6 +564,12 @@ class Runtime:
         self._rebuild_gestures()
         self._stats = SessionStats()
         self._event("profile_loaded", {"player": player, "game": game})
+
+    def _apply_breath_range(self, player: str) -> None:
+        """This player's measured breath range, or the config defaults. Never inherited: a player
+        with no breath.json must not keep the previous player's scale."""
+        saved = profiles.load_breath(player)
+        self._sip.calibrate(*(saved or (config.BREATH_MAX_PUFF_MV, config.BREATH_MAX_SIP_MV)))
 
     def _do_set_calibration(self, calib) -> None:
         self._calib = calib

@@ -2,7 +2,7 @@
 // What the virtual controller is doing: the pad, steering and throttle bars, breath chips, performance stats.
 import { useRef } from "react";
 import { clamp01, humanize } from "../format";
-import type { HelmState, Mapping } from "../types";
+import type { HelmState, Mapping, Send } from "../types";
 import { ControllerView } from "./ControllerView";
 
 const R = 70;
@@ -68,7 +68,7 @@ export function ThrottleCard({ state, mapping }: { state: HelmState; mapping: Ma
   );
 }
 
-export function SipPuffCard({ state, mapping }: { state: HelmState; mapping: Mapping | null }) {
+export function SipPuffCard({ state, mapping, send }: { state: HelmState; mapping: Mapping | null; send: Send }) {
   const last = useRef<{ kind: string; t: number } | null>(null);
   const now = performance.now();
   for (const name of state.fired ?? []) if (BREATH.some(([kind]) => kind === name)) last.current = { kind: name, t: now };
@@ -77,7 +77,17 @@ export function SipPuffCard({ state, mapping }: { state: HelmState; mapping: Map
     <section className="card">
       <div className="card-head">
         <h2>Sip-and-puff</h2>
-        <span className="state ok">Connected</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span className="state ok">Connected</span>
+          <button
+            className="btn quiet"
+            disabled={state.progress !== null}
+            title="Measures how hard you can sip and puff, so the brake and throttle match your lungs"
+            onClick={() => send({ cmd: "calibrate", mode: "breath" })}
+          >
+            Measure my breath
+          </button>
+        </div>
       </div>
       <ul className="chips">
         {BREATH.map(([kind, label]) => {

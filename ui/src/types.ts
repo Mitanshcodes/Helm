@@ -72,7 +72,14 @@ export interface FrameMsg {
 
 export interface EventMsg {
   type: "event";
-  name: "calibration_done" | "gesture_trained" | "coach_result" | "profile_loaded" | "profile_reloaded" | "error";
+  name:
+    | "calibration_done"
+    | "breath_calibration_done"
+    | "gesture_trained"
+    | "coach_result"
+    | "profile_loaded"
+    | "profile_reloaded"
+    | "error";
   data: Record<string, unknown>;
 }
 
@@ -97,7 +104,7 @@ export type ServerMsg = HelmState | FrameMsg | EventMsg;
 export type Command =
   | { cmd: "set_dev_mode"; on: boolean }
   | { cmd: "set_dev_recording"; on: boolean }
-  | { cmd: "calibrate"; mode: CalibrationMode }
+  | { cmd: "calibrate"; mode: CalibrationMode | "breath" }
   | { cmd: "record_gesture"; name: string }
   | { cmd: "record_negative" }
   | { cmd: "delete_gesture"; name: string }
