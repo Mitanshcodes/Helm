@@ -64,7 +64,7 @@ Dashboard, served by Helm itself once `npm run build` has run:
 |---|---|
 | `http://localhost:8000/` | The full dashboard. Calibration starts by itself the first time. |
 | `http://localhost:8000/?quick=1` | Same, with a two-second quick calibration (for a first-time visitor). |
-| `http://localhost:8000/?overlay=1` | Compact view for a small window beside the game. Silent unless you add `&sound=1`. |
+| `http://localhost:8000/?overlay=1` | Read-only camera/face-mesh preview above a live Xbox-style controller. Silent, no automatic calibration. |
 | `http://localhost:8000/?mock=1` | The dashboard on made-up data, with no pipeline behind it. |
 | `http://localhost:8000/slides.html` | The pitch slides. Arrow keys or a click move between them. |
 
@@ -76,6 +76,39 @@ keep the page silent until it has been clicked once, so click anywhere on the da
 
 For dashboard development, `cd ui && npm run dev` serves it on `http://localhost:5173` with live
 reload, talking to a running `python -m helm` (or to nothing, with `?mock=1`).
+
+### Windows game overlay
+
+Build the UI with `cd ui && npm run build`, then start Helm normally. In a second terminal
+using the same Python environment, launch the independent always-on-top viewer:
+
+```bash
+python -m pip install pywebview
+python -m helm.overlay
+```
+
+The window shows the mirrored camera with MediaPipe face contours on top and a controller
+underneath: both sticks, LT/RT percentages, ABXY, shoulders, D-pad, Start/Back and stick clicks.
+It displays Helm's mapped output; it does not read a physical controller or confirm that the game
+received it. Closing the viewer leaves Helm and the game running. Calibrate and change profiles
+from the main dashboard.
+
+Use a windowed or borderless game; exclusive fullscreen is outside this viewer's support.
+Move/resize the viewer with its normal title bar and edges, then switch focus back to the game.
+This first version is an opaque window and intercepts clicks inside its bounds. It requires the
+[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
+If unavailable, the launcher prints a browser fallback.
+
+```bash
+python -m helm.overlay --port 8000 --width 400 --height 780
+python -m helm.overlay --no-top           # ordinary native window
+python -m helm.overlay --browser          # browser viewer on any OS (not always on top)
+python -m helm.overlay --browser --mock   # simulated UI inputs; Helm still serves the built page
+```
+
+The viewer reconnects automatically and clears displayed inputs when disconnected or when no
+state arrives for 1.5 seconds. Camera preview and controller updates use the existing 15/30 Hz
+streams; it does not open another webcam or create another gamepad.
 
 Profiles for SuperTuxKart are in `profiles/`: `demo` (webcam plus breath sensor), `demo_webcam`
 (webcam only) and `judge` (head steering, automatic throttle, eyebrow raise fires an item; nothing

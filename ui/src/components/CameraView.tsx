@@ -58,7 +58,12 @@ export function CameraView({ frame, state, compact }: { frame: FrameMsg | null; 
 
   useEffect(() => {
     const ctx = canvas.current?.getContext("2d");
-    if (!ctx || !frame) return;
+    if (!ctx) return;
+    if (!frame) {
+      if (image.current) image.current.onload = null;
+      ctx.clearRect(0, 0, W, H);
+      return;
+    }
     const paint = (picture: HTMLImageElement | null) => {
       if (picture) ctx.drawImage(picture, 0, 0, W, H);
       else ctx.clearRect(0, 0, W, H);
@@ -68,16 +73,17 @@ export function CameraView({ frame, state, compact }: { frame: FrameMsg | null; 
     const img = (image.current ??= new Image());
     img.onload = () => paint(img);
     img.src = `data:image/jpeg;base64,${frame.jpeg}`;
+    return () => { img.onload = null; };
   }, [frame]);
 
   return (
     <section className="card">
       <div className="card-head">
         <h2>Camera</h2>
-        <span className={state.face ? "state ok" : "state warn"}>{state.face ? "Face found" : "No face found"}</span>
+        <span className={frame && state.face ? "state ok" : "state warn"}>{!frame ? "Waiting for video" : state.face ? "Face found" : "No face found"}</span>
       </div>
       <div className="camera-panel">
-        <canvas ref={canvas} width={W} height={H} role="img" aria-label={state.face ? "Camera preview with your face outlined" : "Camera preview, no face found"} />
+        <canvas ref={canvas} width={W} height={H} role="img" aria-label={!frame ? "No camera preview available" : state.face ? "Camera preview with your face outlined" : "Camera preview, no face found"} />
         {!frame && <div className="camera-message quiet">No camera picture yet</div>}
         {frame && !state.face && <div className="camera-message">Move into view</div>}
         {!compact && <p className="camera-caption">Preview is mirrored · video never leaves this laptop</p>}

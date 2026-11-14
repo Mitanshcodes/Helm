@@ -14,3 +14,4 @@ pytest
 deepagents
 langchain-anthropic
 httpx  # P4: FastAPI TestClient in tests/test_server.py
+pywebview; sys_platform == "win32"  # P2: optional native overlay viewer

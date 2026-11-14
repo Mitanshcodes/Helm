@@ -24,6 +24,7 @@ export function useHelmSocket(onEvent: (event: EventMsg) => void) {
   const [state, setState] = useState<HelmState | null>(null);
   const [frame, setFrame] = useState<FrameMsg | null>(null);
   const [connection, setConnection] = useState<Connection>("connecting");
+  const [lastStateAt, setLastStateAt] = useState(0);
   const socket = useRef<HelmSocket | null>(null);
   const handler = useRef(onEvent);
   handler.current = onEvent;
@@ -34,7 +35,11 @@ export function useHelmSocket(onEvent: (event: EventMsg) => void) {
     let raf = 0;
     const flush = () => {
       raf = 0;
-      if (latestState) setState(latestState);
+      if (latestState) {
+        setState(latestState);
+        setLastStateAt(Date.now());
+        latestState = null;
+      }
       if (latestFrame) setFrame(latestFrame);
     };
     const onMessage = (msg: ServerMsg) => {
@@ -52,5 +57,5 @@ export function useHelmSocket(onEvent: (event: EventMsg) => void) {
   }, []);
 
   const send = useCallback((cmd: Command) => socket.current?.send(cmd), []);
-  return { state, frame, connection, send };
+  return { state, frame, connection, send, lastStateAt };
 }

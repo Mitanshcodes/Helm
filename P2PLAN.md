@@ -8,6 +8,150 @@ which part*.
 risk, and each one has a gate you can check. Pace and order are the user's call; any agent that
 adds an hour estimate to this file is doing it wrong.
 
+## Claude handoff — set up and verify the Windows overlay
+
+**User request (2026-11-14): the overlay is implemented; Claude should handle Windows setup
+and run it on the Windows demo laptop.** Read this section and README's "Windows game overlay".
+Private `context.md` / `architecture.md` / `decisions.md` and `CLAUDE.local.md` are gitignored
+and may be absent on Windows; this tracked handoff and `docs/status/P2.md` contain the needed
+context. The user authorized the complete overlay, including its cross-lane UI changes.
+
+### Setup on the Windows laptop (PowerShell, repo root)
+
+1. Pull the latest `main`, preserving any local work. Check for Python 3.11, Node and npm.
+   Reuse a working Windows `.venv`; if missing, create it with `py -3.11 -m venv .venv`.
+   Never copy the Mac's virtual environment to Windows.
+2. Install and build:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   cd ui
+   npm install
+   npm run build
+   cd ..
+   ```
+
+3. Check Microsoft Edge WebView2 Runtime (needed by the native overlay) and ViGEmBus
+   (needed by the virtual Xbox controller). If either is missing, help install it using its
+   official installer; handle any Windows administrator prompts with the user.
+4. Terminal 1, repo root:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m helm --player judge --game SuperTuxKart
+   ```
+
+   Open `http://localhost:8000`, confirm the correct camera, and calibrate. If the webcam
+   is wrong, try the appropriate `--camera N`; the Mac's camera index is not a Windows default.
+5. Terminal 2, same repo root:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m helm.overlay
+   ```
+
+   This opens a separate **always-on-top desktop window** hosting the local overlay page.
+   A plain browser tab alone does not provide the always-on-top behavior. Move and resize it
+   using its title bar/edges. If needed use `--port N` to match Helm, or `--width 400 --height 780`.
+6. Start SuperTuxKart after Helm creates the pad. Use windowed or borderless display mode,
+   position the overlay in a corner, and return focus to the game. Exclusive fullscreen is
+   outside the current implementation. The window is opaque and does not pass mouse clicks
+   through to the game.
+
+### What Claude must verify and report
+
+- Run `python -m pytest -q` using the Windows venv, build the UI, and run the mock/null smoke
+  command from CLAUDE.md with that same interpreter.
+- Verify camera + face contours above the controller, topmost while the game has focus,
+  resizing, Alt-Tab, and that closing only the viewer leaves the game/controller working.
+- Compare sticks, triggers and buttons with `joy.cpl` and game behavior. Pause from the main
+  dashboard; verify the display goes neutral. Stop/restart Helm; verify clearing and reconnect.
+- **Integration update:** the latest `main` now includes the gesture engine, recorder,
+  learned model, fatigue tracker and teaching UI. The earlier note that P3 was still stubs is
+  superseded. Verify facial buttons and eye-close pause too; pause now requires eyes fully
+  closed continuously for two seconds. Manual dashboard pause remains useful for isolating
+  overlay rendering from gesture recognition.
+- Record actual Windows results in `docs/status/P2.md` and tick the native gates below only
+  after checking them. Fix reproducible setup/overlay issues within this authorized scope.
+  Firmware LED changes were also pushed, but compiling/flashing them is separate from this
+  Windows overlay setup and must not replace the running sensor sketch accidentally.
+
+## Added feature — Windows camera and live controller overlay
+
+**Added 2026-11-14 at the user's request. Implemented; native Windows/game validation pending.**
+The user explicitly authorized the complete feature, including the P4 UI changes needed below.
+
+One small companion window shows the webcam with MediaPipe face contours, and directly below
+it an Xbox-style dummy controller that visualizes Helm's current mapped inputs.
+
+```text
+Helm · Live inputs                 Live
+┌────────────────────────────────────┐
+│ Mirrored webcam + face landmarks   │
+└────────────────────────────────────┘
+          LT                  RT
+             LB          RB
+          left stick       Y
+                     Back/Start  X B
+               D-pad  right stick  A
+             Live pressed-button names
+FPS · software latency            Game
+```
+
+### Implementation and ownership
+
+- **P2: `helm/overlay.py`.** Separate viewer process, invoked with `python -m helm.overlay`.
+  Uses pywebview + Edge WebView2 on Windows to load the existing local server's `?overlay=1`
+  page. `on_top=True`, standard draggable/resizable title bar, default 400 × 780 logical pixels.
+  `--port`, `--width`, `--height`, `--no-top`, `--browser` and `--mock` are supported.
+  GUI event loop owns the viewer's main thread. It never starts the runtime, camera or pad;
+  closing it cannot stop Helm. Missing dependencies/engine produce setup instructions.
+- **P4: `ui/src/Overlay.tsx` and `overlay.css`.** Dedicated read-only page selected in
+  `main.tsx`; reuses `CameraView`, face contours, and `useHelmSocket`. Video comes from
+  `frame.jpeg` + `frame.landmarks`; the server already mirrors both. No second MediaPipe
+  inference, capture, profile/calibration commands or audio. Main dashboard stays interactive.
+- **P4: `ui/src/components/ControllerView.tsx`.** Local SVG, driven only by `state.control`.
+  Shows LX/LY and RX/RY thumb positions, LT/RT fill and percentages, A/B/X/Y, LB/RB,
+  all D-pad directions, Start/Back and LS/RS clicks. Positive stick Y is drawn upward.
+  Pressed inputs use the existing accent and a text readout. No Gamepad API/driver polling.
+- **Shared stream:** existing `/ws`, controller state at 30 Hz, preview at 15 Hz. No protocol
+  or frozen-contract changes. The runtime's `control` is already gated for pause/setup/face
+  loss; the viewer does not reconstruct controls from gesture activation or `fired`.
+  These are intended mapped outputs, not acknowledgment from Windows or the game.
+- **Connection handling:** automatic reconnect; show unavailable status, clear inputs and
+  hide the old preview on disconnect or after 1.5 s without a state message. This detects
+  transport silence, not a runtime repeatedly publishing an old snapshot.
+
+### Launch and platform boundaries
+
+Build with `cd ui && npm run build`. Start `python -m helm` first, then in another terminal
+run `python -m helm.overlay` from the same environment. Install `pywebview` and Microsoft
+Edge WebView2 Runtime on Windows. `--browser` opens the same viewer on any OS without a
+native dependency or topmost guarantee. `--mock` selects simulated UI data but still needs
+the local server to serve the page. Setup instructions are also in README.
+
+Support windowed and borderless gameplay; exclusive fullscreen is outside the first version.
+Use an opaque, normally framed window. Native transparency/click-through and global hotkeys
+are deferred; users position it away from game controls and return focus to the game.
+An OBS browser source can use the URL, but stream capture is separate from desktop topmost.
+
+### Completion checklist
+
+- [x] Dedicated vertical camera + controller page at `/?overlay=1`.
+- [x] Full Xbox-style controller driven by final mapped outputs.
+- [x] Independent Windows topmost launcher, optional dependency and browser fallback.
+- [x] Read-only behavior, disconnect/stale clearing and automatic reconnect.
+- [x] Launcher tests and README setup instructions.
+- [x] Verification after integrating latest `main`: 319 Python tests pass (10.06 s, just over
+      the repo's 10 s target); TypeScript/Vite build passes; null-output smoke
+      exits cleanly. Browser checked against a real mock runtime, including both stick
+      directions, LT 50% / RT 100%, pressed buttons/stick click, pause and disconnect.
+- [ ] Native Windows gate: verify WebView2 startup, drag/resize, Alt-Tab, topmost over
+      SuperTuxKart in windowed/borderless mode, and closing the viewer while playing.
+- [ ] Real Windows gate: confirm face contours and every mapped stick/trigger/button match
+      `joy.cpl`/game behavior, including pause, face loss and sensor unplug.
+
+References: [pywebview API](https://pywebview.flowrl.com/api/),
+[Windows renderer requirements](https://pywebview.flowrl.com/guide/web_engine.html).
+
 ## What P2 owns
 
 | File | Status |
