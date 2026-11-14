@@ -34,7 +34,7 @@ function GesturePicker(props: { value: string; catalog?: Catalog; allowAlways: b
         return (
           <optgroup key={group} label={title}>
             {items.map((g) => (
-              <option key={g.name} value={g.name} disabled={!g.usable && g.name !== value}>
+              <option key={g.name} value={g.name}>
                 {g.label}
                 {g.usable ? "" : " (weak for you)"}
               </option>

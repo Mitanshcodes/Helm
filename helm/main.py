@@ -4,10 +4,14 @@ import argparse
 import dataclasses
 import logging
 import os
+import shutil
 import statistics
+import subprocess
+import sys
 import threading
 import time
 from collections import deque
+from pathlib import Path
 
 import numpy as np
 
@@ -202,8 +206,10 @@ class Runtime:
         self._request("delete_gesture", name)
 
     def set_mapping(self, mapping: dict) -> list[str]:
-        """Returns validation errors, empty if applied."""
-        errors = profiles.validate_mapping(mapping, self._calib, self._learned(), self._sip.connected)
+        """Returns validation errors, empty if applied. A mapping set by hand may use any expression, including
+        ones calibration found weak: the player chose it (the coach still sticks to reliable ones)."""
+        calib = dataclasses.replace(self._calib, reliable=list(BLENDSHAPE_NAMES)) if self._calib else None
+        errors = profiles.validate_mapping(mapping, calib, self._learned(), self._sip.connected)
         if not errors:
             self._request("set_mapping", mapping)
         return errors
@@ -535,12 +541,56 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--no-server", action="store_true", help="run the pipeline without the dashboard server")
     p.add_argument("--seconds", type=float, default=None, metavar="N", help="stop after N seconds (with --no-server)")
     p.add_argument("--serial", default="auto", metavar="PORT|auto|off")
+    p.add_argument("--no-build", action="store_true", help="do not rebuild the dashboard when its source changed")
     return p.parse_args(argv)
+
+
+UI_DIR = Path(__file__).resolve().parent.parent / "ui"
+
+
+def ensure_dashboard(ui: Path = UI_DIR) -> bool:
+    """Rebuild ui/dist when the dashboard's source is newer than the build (for example after a git pull), so
+    http://localhost:8000 never serves an old page. Runs `npm install` first when the dependencies changed.
+    Returns True when the build is current. Without npm, or if the build fails, logs how to fix it and goes on."""
+    dist = ui / "dist" / "index.html"
+    sources = [p for p in (ui / "src").rglob("*") if p.is_file()]
+    sources += [p for p in (ui / "index.html", ui / "package.json", ui / "package-lock.json", ui / "vite.config.ts")
+                if p.exists()]
+    if not sources:
+        return dist.exists()
+    if dist.exists() and dist.stat().st_mtime >= max(p.stat().st_mtime for p in sources):
+        return True
+    npm = shutil.which("npm")
+    if not npm:
+        log.warning("the dashboard is out of date and npm was not found: run `cd ui && npm install && npm run build`")
+        return False
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    installed = ui / "node_modules" / ".package-lock.json"
+    lock = ui / "package-lock.json"
+    steps = []
+    if not installed.exists() or (lock.exists() and lock.stat().st_mtime > installed.stat().st_mtime):
+        steps.append([npm, "install", "--no-audit", "--no-fund"])
+    steps.append([npm, "run", "build"])
+    log.info("the dashboard changed since it was last built: building it now (a few seconds)")
+    for cmd in steps:
+        try:
+            proc = subprocess.run(cmd, cwd=ui, capture_output=True, text=True, timeout=300, creationflags=flags)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            log.warning("dashboard build failed (%s): run `cd ui && npm install && npm run build`", e)
+            return False
+        if proc.returncode != 0:
+            tail = (proc.stdout + proc.stderr).strip().splitlines()[-8:]
+            log.warning("dashboard build failed: `%s` exited %s:\n%s", " ".join(cmd[1:]), proc.returncode, "\n".join(tail))
+            return False
+    log.info("dashboard built")
+    return True
 
 
 def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    if not args.no_server and not args.no_build:
+        ensure_dashboard()
     runtime = Runtime(args)
     runtime.start()
     try:

@@ -81,3 +81,53 @@ def test_commands_do_not_break_the_loop(monkeypatch, tmp_path):
     while not (tmp_path / "guest" / "gestures.npz").exists() and time.monotonic() < deadline:
         time.sleep(0.02)
     assert GestureModel.load(str(tmp_path / "guest" / "gestures.npz")).names == ["left_smirk"]
+
+
+def test_hand_made_mapping_may_use_a_weak_expression():
+    from helm.calibration import default_calibration
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
+    rt._calib = default_calibration("guest", mode="full")       # full calibration: only the eyes passed
+    mapping = default_mapping("SuperTuxKart")                    # brow, smile, pucker, jaw: all "weak"
+    assert profiles.validate_mapping(mapping, rt._calib, [], False)   # the strict check would refuse it
+    assert rt.set_mapping(mapping) == []                         # but the player chose it by hand
+
+
+def _ui(tmp_path):
+    ui = tmp_path / "ui"
+    (ui / "src").mkdir(parents=True)
+    (ui / "src" / "App.tsx").write_text("x")
+    (ui / "package-lock.json").write_text("{}")
+    return ui
+
+
+def test_dashboard_is_rebuilt_when_its_source_changed(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    from helm import main as helm_main
+    ui = _ui(tmp_path)
+    ran = []
+
+    def fake_run(cmd, cwd, **kwargs):
+        ran.append(cmd[1:])
+        if cmd[1:3] == ["run", "build"]:
+            (ui / "dist").mkdir(exist_ok=True)
+            (ui / "dist" / "index.html").write_text("built")
+        if cmd[1] == "install":
+            (ui / "node_modules").mkdir(exist_ok=True)
+            (ui / "node_modules" / ".package-lock.json").write_text("{}")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(helm_main.shutil, "which", lambda name: "/usr/bin/npm")
+    monkeypatch.setattr(helm_main.subprocess, "run", fake_run)
+    assert helm_main.ensure_dashboard(ui) and ran == [["install", "--no-audit", "--no-fund"], ["run", "build"]]
+    ran.clear()
+    assert helm_main.ensure_dashboard(ui) and ran == []                     # up to date: nothing runs
+    later = (ui / "dist" / "index.html").stat().st_mtime + 10
+    os.utime(ui / "src" / "App.tsx", (later, later))                        # a pull changed the source
+    assert helm_main.ensure_dashboard(ui) and ran == [["run", "build"]]     # dependencies unchanged: build only
+
+
+def test_dashboard_without_npm_warns_and_carries_on(tmp_path, monkeypatch):
+    from helm import main as helm_main
+    monkeypatch.setattr(helm_main.shutil, "which", lambda name: None)
+    assert helm_main.ensure_dashboard(_ui(tmp_path)) is False

@@ -120,6 +120,21 @@ def test_range_steps_wait_for_a_slow_player():
     waiting = [p for p in progs if p.step == "yaw_left"]
     assert any("further left" in p.prompt for p in waiting)            # nudged once the minimum time passed
     assert len(waiting) / FPS >= 3.5 + config.CALIB_RANGE_HOLD_S - 0.1
+    # Expressions too: someone still hearing "raise your eyebrows" starts late and is not marked unreliable.
+    for name in ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight"):
+        assert name in c.reliable
+    brow = [p for p in progs if p.step == "brow_raise"]
+    assert any("(2 of 3)" in p.prompt for p in brow)
+    assert len(brow) / FPS < config.CALIB_EXPRESSION_MAX_S                # ends at the third repetition
+
+
+def test_expression_step_ends_after_three_reps_and_weak_ones_are_noted():
+    cal = Calibrator("sam", "full")
+    progs, _ = run(cal, Player())
+    brow = [p for p in progs if p.step == "brow_raise"]
+    assert len(brow) / FPS < 3.5                                          # three quick reps: no waiting
+    assert "mouthPucker" not in cal.result().reliable
+    assert any("Pucker" in n and "by hand" in n for n in cal.notes)
 
 
 def test_range_step_gives_up_on_no_movement():

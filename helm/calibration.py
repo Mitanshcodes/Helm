@@ -25,6 +25,10 @@ _DIRECTION_WORD = {("yaw", -1): "left", ("yaw", 1): "right", ("pitch", 1): "up",
 _NO_FACE_PROMPT = "I can't see your face. Look at the screen"
 
 
+def _indices(measure: tuple) -> list[int]:
+    return [BLENDSHAPE_NAMES.index(n) for n in measure[1:]]
+
+
 def default_calibration(player: str, mode: str = "default") -> Calibration:
     """Neutral 0, 15 degrees each way, no measured expressions."""
     r = config.DEFAULT_RANGE_DEG
@@ -65,6 +69,9 @@ class Calibrator:
         self._i = 0
         self._elapsed = 0.0                        # face-visible seconds in the current step
         self._held = 0.0                           # range steps: seconds spent turned past CALIB_RANGE_MOVED_DEG
+        self._reps: list[float] = []               # expression steps: peak (above neutral) of each repetition
+        self._in_rep = False
+        self._rep_peak = 0.0
         self._done_s = 0.0                         # seconds of completed steps
         self._last_t: float | None = None
         self._samples: list[tuple[float, FrameFeatures]] = []
@@ -93,6 +100,16 @@ class Calibrator:
                 self._held += dt
             finished = ((self._elapsed >= duration and self._held >= config.CALIB_RANGE_HOLD_S)
                         or self._elapsed >= config.CALIB_RANGE_TIMEOUT_S)
+        elif measure[0] == "expr":                 # count repetitions live; end at three, or give up
+            level = max(float(f.blend[k] - self._blend_neutral[k]) for k in _indices(measure))
+            if not self._in_rep and level >= config.CALIB_REP_LEVEL:
+                self._in_rep, self._rep_peak = True, level
+            elif self._in_rep:
+                self._rep_peak = max(self._rep_peak, level)
+                if level < 0.5 * config.CALIB_REP_LEVEL:
+                    self._in_rep = False
+                    self._reps.append(self._rep_peak)
+            finished = len(self._reps) >= 3 or self._elapsed >= config.CALIB_EXPRESSION_MAX_S
         else:
             finished = self._elapsed >= duration
         if finished:
@@ -101,6 +118,7 @@ class Calibrator:
             self._i += 1
             self._elapsed = 0.0
             self._held = 0.0
+            self._reps, self._in_rep, self._rep_peak = [], False, 0.0
             self._samples = []
             if self._i == len(self._steps):
                 self._done = True
@@ -132,6 +150,12 @@ class Calibrator:
             return Progress(active=False, step="done", prompt=text, progress=1.0, overall=1.0, done=True)
         name, duration, step_prompt, measure = self._steps[self._i]
         step_progress = min(self._elapsed / duration, 1.0)
+        if measure[0] == "expr":                   # the bar fills with each repetition
+            step_progress = len(self._reps) / 3
+            if prompt is None and self._reps:
+                prompt = f"{step_prompt} ({len(self._reps)} of 3)"
+            elif prompt is None and self._elapsed >= 4.0:
+                prompt = f"A bit bigger: {step_prompt[0].lower()}{step_prompt[1:]}"
         if measure[0] == "range":                  # the bar fills only while the head is held turned
             step_progress = min(step_progress, self._held / config.CALIB_RANGE_HOLD_S)
             if prompt is None and self._elapsed >= duration:
@@ -163,18 +187,18 @@ class Calibrator:
             self._range[axis][1 if sign > 0 else 0] = limit
         elif measure[0] == "expr":
             names = list(measure[1:])
-            idx = [BLENDSHAPE_NAMES.index(n) for n in names]
             times = np.array([t for t, _ in self._samples])
-            for name, k in zip(names, idx):            # each source's own peak scales its expression level
+            for name, k in zip(names, _indices(measure)):   # each source's own peak scales its expression level
                 own = top_peaks(np.array([f.blend[k] for f in frames]), times)
                 if own:
                     self._blend_peak[name] = float(np.median(own))
-            # Reliability is judged on the gesture as read (max over the sources, above each one's neutral).
-            above = np.array([max(f.blend[k] - self._blend_neutral[k] for k in idx) for f in frames])
-            peaks = top_peaks(above, times)
-            if not peaks:
-                return
-            median_peak = float(np.median(peaks))
-            if (len(peaks) == 3 and min(peaks) >= config.RELIABLE_MIN_PEAK_RATIO * median_peak
-                    and median_peak >= config.RELIABLE_MIN_PEAK_ABOVE_NEUTRAL):
-                self._reliable.extend(names)
+            # Reliable: at least two clear repetitions, of similar strength, well above the relaxed face.
+            reps = sorted(self._reps, reverse=True)[:3]
+            if len(reps) >= config.RELIABLE_MIN_REPS:
+                median_peak = float(np.median(reps))
+                if (median_peak >= config.RELIABLE_MIN_PEAK_ABOVE_NEUTRAL
+                        and min(reps) >= config.RELIABLE_MIN_PEAK_RATIO * median_peak):
+                    self._reliable.extend(names)
+                    return
+            word = self._steps[self._i][0].replace("_", " ")
+            self.notes.append(f"{word.capitalize()} was hard to read; it can still be mapped by hand.")

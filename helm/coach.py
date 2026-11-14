@@ -9,6 +9,7 @@ offline path that needs nothing: the default mapping filtered to the player's re
 rule-based review. Both run on a worker thread (Runtime.coach_build / coach_review), never the pipeline.
 """
 import copy
+import dataclasses
 import json
 import logging
 import os
@@ -750,6 +751,9 @@ def build_mapping(game: str, calib: Calibration, learned: list[str], has_breath:
 def review_session(mapping: dict, stats: dict, calib: Calibration, learned: list[str], has_breath: bool) -> dict:
     """Return {"mapping": <valid mapping dict>, "changes": [str, ...]}."""
     game = mapping.get("game", "SuperTuxKart")
+    # Expressions already in the mapping were chosen (often by hand): the review may keep them even if weak.
+    chosen = {s for g in (mapping.get("gestures") or {}).values() if isinstance(g, dict) for s in g.get("sources") or []}
+    calib = dataclasses.replace(calib, reliable=list(dict.fromkeys([*calib.reliable, *sorted(chosen)])))
     session = _Session(game, calib, learned, has_breath, stats)
     task = ("Review this session and improve the current mapping with the smallest set of changes. "
             f"Current mapping: {json.dumps(mapping)}")

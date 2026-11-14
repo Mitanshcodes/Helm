@@ -32,11 +32,14 @@ CALIB_RANGE_S = 3.0                # shortest a head-range step can be
 CALIB_RANGE_MOVED_DEG = 6.0        # a range step waits until the head is at least this far from neutral...
 CALIB_RANGE_HOLD_S = 1.5           # ...for this long (the spoken prompt alone takes ~3 s)
 CALIB_RANGE_TIMEOUT_S = 8.0        # then moves on anyway, using what it measured
-CALIB_EXPRESSION_S = 4.0
+CALIB_EXPRESSION_S = 4.0           # typical length of an expression step (for the overall progress bar)
+CALIB_EXPRESSION_MAX_S = 10.0      # an expression step ends after 3 repetitions, or at this time
+CALIB_REP_LEVEL = 0.12             # above neutral: a repetition starts; it ends below half of this
 CALIB_MAX_DT_S = 0.1               # longest frame gap that counts toward a step's timer
 CALIB_PEAK_SEPARATION_S = 0.4      # expression peaks closer than this count as one repetition
-RELIABLE_MIN_PEAK_RATIO = 0.7      # weakest peak / median peak
-RELIABLE_MIN_PEAK_ABOVE_NEUTRAL = 0.15
+RELIABLE_MIN_REPS = 2              # repetitions an expression needs to count as reliable
+RELIABLE_MIN_PEAK_RATIO = 0.5      # weakest counted repetition / median repetition
+RELIABLE_MIN_PEAK_ABOVE_NEUTRAL = 0.12
 # Calibration never prompts for these, so they are trusted without a check: blinks drive the pause
 # gesture in every mapping, and quick mode also trusts the two expressions the judge profile uses.
 ASSUMED_RELIABLE = ("eyeBlinkLeft", "eyeBlinkRight")
