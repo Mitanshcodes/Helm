@@ -91,6 +91,10 @@ ul {
   color: var(--muted);
 }
 
+.header-actions .btn {
+  padding: 0 20px;
+}
+
 .header-actions {
   margin-left: auto;
   display: flex;
@@ -636,6 +640,100 @@ textarea {
   padding: 32px 36px 40px;
   border: 2px solid var(--accent);
   overflow: hidden;
+}
+
+.wizard {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.wizard-head {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.wizard-stage {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.read-area {
+  display: flex;
+  min-height: 46vh;
+  margin-top: 24px;
+  padding: 8px;
+  border-radius: var(--radius-inner);
+  background: var(--bg);
+}
+
+.read-text {
+  max-width: 30em;
+  padding: 24px 28px;
+  font-size: clamp(24px, 2.2vw, 34px);
+  line-height: 1.5;
+  transition: margin 0.6s ease;
+}
+
+.read-text.top-left {
+  margin: 0 auto auto 0;
+}
+
+.read-text.top-right {
+  margin: 0 0 auto auto;
+}
+
+.read-text.bottom-right {
+  margin: auto 0 0 auto;
+}
+
+.read-text.bottom-left {
+  margin: auto auto 0 0;
+}
+
+.teach-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-left: 1.4em;
+  list-style: decimal;
+}
+
+.teach-steps b,
+.teach-steps span {
+  display: block;
+}
+
+.teach-steps span {
+  color: var(--muted);
+}
+
+.teach-steps .skipped {
+  opacity: 0.5;
+}
+
+.outcome {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 16px 20px;
+  border-radius: var(--radius-inner);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.outcome.weak {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.outcome b {
+  font-size: 22px;
 }
 
 .wizard .prompt {

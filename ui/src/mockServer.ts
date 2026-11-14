@@ -66,12 +66,18 @@ const CALIBRATION: Step[] = [
   { step: "yaw_right", prompt: "Turn your head right as far as is comfortable, and hold", seconds: 2.5 },
   { step: "brow_raise", prompt: "Raise your eyebrows three times", seconds: 4 },
 ];
+// Timings mirror what P3's TakeRecorder is expected to send; the dashboard reads them, it never assumes them.
+const TAKES = 10;
 const takes = (name: string): Step[] =>
-  [1, 2, 3, 4, 5].flatMap((n) => [
-    { step: `take_${n}`, prompt: `Take ${n} of 5: get ready`, seconds: 1 },
+  Array.from({ length: TAKES }, (_, i) => i + 1).flatMap((n) => [
+    { step: `take_${n}`, prompt: "Get ready", seconds: 1 },
     { step: `take_${n}`, prompt: `Do “${name.replace(/_/g, " ")}” now, and hold`, seconds: 1 },
     { step: `take_${n}`, prompt: "Relax", seconds: 1 },
   ]);
+const EVERYDAY_FACE: Step[] = [
+  { step: "neutral", prompt: "Look at the screen and relax your face", seconds: 10 },
+  { step: "read_aloud", prompt: "Read this aloud at your own pace. Mouthing the words is fine too.", seconds: 60 },
+];
 
 const bump = (phase: number, width: number) => (phase < width ? Math.sin((Math.PI * phase) / width) : 0);
 const clamp = (v: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
@@ -231,7 +237,7 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
           event("gesture_trained", { name: cmd.name, accuracy: 0.93 });
         });
       } else if (cmd.cmd === "record_negative") {
-        run([{ step: "negatives", prompt: "Talk, look around, laugh", seconds: 6 }], () => event("gesture_trained", { name: "none", accuracy: null }));
+        run(EVERYDAY_FACE, () => event("gesture_trained", { name: "none", accuracy: null }));
       } else if (cmd.cmd === "load_profile") {
         later(150, () => {
           const judge = cmd.player === "judge";

@@ -2,10 +2,11 @@
 // One page (docs/SPEC.md section 9). Default layout shows everything; ?overlay=1 is the small window beside the
 // game; ?quick=1 makes calibration a quick one; ?mock=1 runs with no backend.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CoachResult, Command, EventMsg, Mapping, MappingStatus, Trained } from "./types";
+import type { CoachResult, Command, EventMsg, Mapping, MappingStatus } from "./types";
 import { MOCK, fetchProfiles, useHelmSocket } from "./useHelmSocket";
 import { useFireClicks, useSetting, useSpokenPrompts } from "./feedback";
 import { JUDGE, ProfileCard } from "./components/ProfileCard";
+import { useTeachFlow } from "./teach";
 import { CameraView } from "./components/CameraView";
 import { CoachPanel } from "./components/CoachPanel";
 import { SipPuffCard, StatTiles, StickCard, ThrottleCard } from "./components/Controls";
@@ -23,7 +24,6 @@ const MAPPING_ACK_MS = 600; // no "error" event within this time means set_mappi
 const TOAST_MS = 6000;
 
 export default function App() {
-  const [trained, setTrained] = useState<Trained | null>(null);
   const [coach, setCoach] = useState<CoachResult | null>(null);
   const [coachBusy, setCoachBusy] = useState(false);
   const [applied, setApplied] = useState<Mapping | null>(null); // last mapping this page knows was applied
@@ -38,11 +38,13 @@ export default function App() {
   const [voice, setVoice] = useSetting("voice");
   const [clicks, setClicks] = useSetting("clicks");
   const refreshProfiles = useCallback(() => void fetchProfiles().then(setProfiles), []);
+  const teachRef = useRef<ReturnType<typeof useTeachFlow> | null>(null);
+  const playerRef = useRef("guest");
 
   const onEvent = useCallback((msg: EventMsg) => {
     const data = msg.data;
-    if (msg.name === "gesture_trained") setTrained(data as unknown as Trained);
-    else if (msg.name === "coach_result") {
+    if (teachRef.current?.onEvent(msg, playerRef.current)) return;
+    if (msg.name === "coach_result") {
       setCoach(data as unknown as CoachResult);
       setCoachBusy(false);
     } else if (msg.name === "profile_loaded") {
@@ -52,7 +54,6 @@ export default function App() {
       }
       setApplied(null);
       setCoach(null);
-      setTrained(null);
       setMappingStatus({ errors: [], applied: false });
     } else if (msg.name === "error") {
       const message = String(data.message ?? "Something went wrong");
@@ -77,6 +78,9 @@ export default function App() {
   );
 
   sendRef.current = send;
+  const teach = useTeachFlow(send);
+  teachRef.current = teach;
+  if (state) playerRef.current = state.profile.player;
   useSpokenPrompts(state, voice);
   useFireClicks(state, clicks);
 
@@ -111,7 +115,8 @@ export default function App() {
     autoSent.current = false; // a restarted server may have no calibration again
     faceSince.current = null;
     setCoachBusy(false);
-  }, [connection]);
+    teach.reset();
+  }, [connection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // First calibration starts by itself once a face has been visible for a second. The overlay window never
   // starts it, so two open windows do not both send the command.
@@ -147,7 +152,6 @@ export default function App() {
   if (!state) return <main className="page">{offline && connection === "closed" ? lost : <p className="starting">Starting Helm…</p>}</main>;
 
   const mapping = state.mapping ?? applied;
-  const busy = state.progress !== null;
   return (
     <>
       <main className={`page${OVERLAY ? " compact" : ""}${offline ? " dimmed" : ""}`} aria-hidden={offline}>
@@ -160,7 +164,7 @@ export default function App() {
           onNextVisitor={profiles[JUDGE]?.length ? nextVisitor : undefined}
         />
         <StatusBanner state={state} />
-        {state.progress && <Wizard progress={state.progress} />}
+        {state.progress && <Wizard progress={state.progress} flow={teach.flow} />}
         <div className="columns">
           <div className="col left">
             <CameraView frame={frame} state={state} compact={OVERLAY} />
@@ -177,7 +181,14 @@ export default function App() {
         </div>
         {!OVERLAY && (
           <div className="tools">
-            <GestureRecorder state={state} send={send} trained={trained} busy={busy} />
+            <GestureRecorder
+              state={state}
+              send={send}
+              trained={teach.trained}
+              flow={teach.flow}
+              hasFace={teach.hasFace(state.profile.player)}
+              start={teach.start}
+            />
             <MappingView mapping={mapping} status={mappingStatus} apply={applyMapping} send={send} />
             <CoachPanel state={state} send={send} result={coach} busy={coachBusy} apply={applyMapping} />
             <ProfileCard
