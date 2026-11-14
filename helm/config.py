@@ -16,9 +16,9 @@ ONE_EURO_BETA = 1.0                # raise if steering feels laggy. Spec's 0.01 
                                    # normalized axes it lagged a head turn ~270 ms in simulation, 1.0 lags ~1 frame
 ONE_EURO_D_CUTOFF = 1.0
 AXIS_DEADZONE = 0.08
-AXIS_GAMMA = 1.5
-DEFAULT_RANGE_DEG = 15.0           # per direction, when there is no calibration
-MIN_RANGE_DEG = 4.0
+AXIS_GAMMA = 2.0                   # >1 = gentle near center, full lock still at the calibrated range
+DEFAULT_RANGE_DEG = 20.0           # per direction, when there is no calibration (and quick mode's start)
+MIN_RANGE_DEG = 8.0                # floor on a measured range: below this, tracking jitter alone moves the stick
 DEFAULT_PEAK_ABOVE_NEUTRAL = 0.5   # expression peak when none was measured
 MIN_EXPRESSION_SPAN = 0.05         # floor on (peak - neutral) so expr never divides by ~0
 AUTO_RANGE_SAMPLES = 1800          # quick mode: excursions kept per axis and direction (~60 s at 30 fps)
@@ -28,7 +28,10 @@ DRIFT_MAX_FRACTION = 0.5           # drift never moves neutral more than this sh
 
 CALIB_NEUTRAL_S = 3.0
 CALIB_NEUTRAL_QUICK_S = 2.0
-CALIB_RANGE_S = 2.5
+CALIB_RANGE_S = 3.0                # shortest a head-range step can be
+CALIB_RANGE_MOVED_DEG = 6.0        # a range step waits until the head is at least this far from neutral...
+CALIB_RANGE_HOLD_S = 1.5           # ...for this long (the spoken prompt alone takes ~3 s)
+CALIB_RANGE_TIMEOUT_S = 8.0        # then moves on anyway, using what it measured
 CALIB_EXPRESSION_S = 4.0
 CALIB_MAX_DT_S = 0.1               # longest frame gap that counts toward a step's timer
 CALIB_PEAK_SEPARATION_S = 0.4      # expression peaks closer than this count as one repetition

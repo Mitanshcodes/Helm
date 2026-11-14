@@ -66,6 +66,7 @@ class Calibrator:
         self._total_s = sum(s[1] for s in self._steps)
         self._i = 0
         self._elapsed = 0.0                        # face-visible seconds in the current step
+        self._held = 0.0                           # range steps: seconds spent turned past CALIB_RANGE_MOVED_DEG
         self._done_s = 0.0                         # seconds of completed steps
         self._last_t: float | None = None
         self._samples: list[tuple[float, FrameFeatures]] = []
@@ -87,12 +88,21 @@ class Calibrator:
 
         self._samples.append((t_s, f))
         self._elapsed += dt
-        name, duration, _, _ = self._steps[self._i]
-        if self._elapsed >= duration:
+        name, duration, _, measure = self._steps[self._i]
+        if measure[0] == "range":                  # wait for the turn itself, not just the clock
+            _, axis, sign = measure
+            if sign * (getattr(f, axis) - self._neutral[axis]) >= config.CALIB_RANGE_MOVED_DEG:
+                self._held += dt
+            finished = ((self._elapsed >= duration and self._held >= config.CALIB_RANGE_HOLD_S)
+                        or self._elapsed >= config.CALIB_RANGE_TIMEOUT_S)
+        else:
+            finished = self._elapsed >= duration
+        if finished:
             self._finish_step()
             self._done_s += duration
             self._i += 1
             self._elapsed = 0.0
+            self._held = 0.0
             self._samples = []
             if self._i == len(self._steps):
                 self._done = True
@@ -122,11 +132,16 @@ class Calibrator:
             if self.notes:
                 text += ". " + " ".join(self.notes)
             return Progress(active=False, step="done", prompt=text, progress=1.0, overall=1.0, done=True)
-        name, duration, step_prompt, _ = self._steps[self._i]
+        name, duration, step_prompt, measure = self._steps[self._i]
+        step_progress = min(self._elapsed / duration, 1.0)
+        if measure[0] == "range":                  # the bar fills only while the head is held turned
+            step_progress = min(step_progress, self._held / config.CALIB_RANGE_HOLD_S)
+            if prompt is None and self._elapsed >= duration:
+                prompt = f"Turn a little further {_DIRECTION_WORD[measure[1:]]}, and hold"
         if prompt is None:
             prompt = step_prompt if not self._prompt_note else f"{self._prompt_note} {step_prompt}"
-        return Progress(active=True, step=name, prompt=prompt, progress=min(self._elapsed / duration, 1.0),
-                        overall=min((self._done_s + self._elapsed) / self._total_s, 1.0))
+        return Progress(active=True, step=name, prompt=prompt, progress=step_progress,
+                        overall=min((self._done_s + min(self._elapsed, duration)) / self._total_s, 0.99))
 
     def _finish_step(self) -> None:
         name, _, _, measure = self._steps[self._i]

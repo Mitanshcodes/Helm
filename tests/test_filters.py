@@ -69,7 +69,7 @@ def test_neutral_and_per_direction_range():
 
 def test_uncalibrated_defaults():
     n = Normalizer()
-    s = n.update(frame(1, yaw=15.0), breath=0.5)
+    s = n.update(frame(1, yaw=config.DEFAULT_RANGE_DEG), breath=0.5)
     assert set(s.axes) == set(AXES) and s.axes["yaw"] == pytest.approx(1.0)
     assert s.expr.shape == (N_BLEND,) and s.delta.shape == (FEATURE_DIM,)
     assert s.breath == 0.5 and s.delta[-1] == pytest.approx(0.5)
@@ -98,7 +98,7 @@ def test_face_lost_returns_zeros_and_resets_filters():
     lost = n.update(frame(10, face=False), breath=-0.3)
     assert not lost.face and all(v == 0.0 for v in lost.axes.values()) and not lost.expr.any()
     assert lost.delta.shape == (FEATURE_DIM,) and lost.delta[-1] == pytest.approx(-0.3)
-    back = n.update(frame(11, yaw=-15.0))
+    back = n.update(frame(11, yaw=-config.DEFAULT_RANGE_DEG))
     assert back.axes["yaw"] == pytest.approx(-1.0)            # no smoothing carried over from before the loss
 
 

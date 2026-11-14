@@ -32,16 +32,20 @@ def test_top_peaks():
 class Player:
     """Synthetic player that follows the calibration prompts."""
 
-    def __init__(self, yaw_left=20.0, yaw_right=25.0, up=12.0, down=2.0, weak=("mouthPucker",), neutral_yaw=3.0):
+    def __init__(self, yaw_left=20.0, yaw_right=25.0, up=12.0, down=2.0, weak=("mouthPucker",), neutral_yaw=3.0,
+                 react_s=0.0):
         self.yaw_left, self.yaw_right, self.up, self.down = yaw_left, yaw_right, up, down
         self.weak, self.neutral_yaw = weak, neutral_yaw
+        self.react_s = react_s                     # seconds into a step before the player starts moving
         self.i = 0
 
     def frame(self, step: str, t_in_step: float, face: bool = True) -> FrameFeatures:
         self.i += 1
         yaw, pitch = self.neutral_yaw, -4.0
         blend = np.full(N_BLEND, 0.02, np.float32)
-        if step == "yaw_left":
+        if t_in_step < self.react_s:
+            pass
+        elif step == "yaw_left":
             yaw -= self.yaw_left
         elif step == "yaw_right":
             yaw += self.yaw_right
@@ -103,6 +107,26 @@ def test_small_range_is_flagged_in_the_next_prompt():
     progs, _ = run(cal, Player())
     pitch_down_end = [p for p in progs if p.step == "brow_raise"][0]
     assert "small" in pitch_down_end.prompt
+
+
+def test_range_steps_wait_for_a_slow_player():
+    """Someone still listening to the spoken prompt turns late: the step waits instead of measuring nothing."""
+    cal = Calibrator("sam", "full")
+    progs, _ = run(cal, Player(react_s=3.5))
+    c = cal.result()
+    assert c.range["yaw"][0] == pytest.approx(20.0, abs=0.5) and c.range["yaw"][1] == pytest.approx(25.0, abs=0.5)
+    assert c.range["pitch"][1] == pytest.approx(12.0, abs=0.5)
+    assert not any("left" in n or "right" in n for n in cal.notes)
+    waiting = [p for p in progs if p.step == "yaw_left"]
+    assert any("further left" in p.prompt for p in waiting)            # nudged once the minimum time passed
+    assert len(waiting) / FPS >= 3.5 + config.CALIB_RANGE_HOLD_S - 0.1
+
+
+def test_range_step_gives_up_on_no_movement():
+    cal = Calibrator("sam", "full")
+    progs, _ = run(cal, Player(yaw_left=0.0))
+    assert len([p for p in progs if p.step == "yaw_left"]) / FPS == pytest.approx(config.CALIB_RANGE_TIMEOUT_S, abs=0.1)
+    assert cal.result().range["yaw"][0] == config.MIN_RANGE_DEG and any("left" in n for n in cal.notes)
 
 
 def test_face_lost_pauses_the_timer():
