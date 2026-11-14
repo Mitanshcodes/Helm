@@ -390,11 +390,10 @@ class Runtime:
         self._take_recorder = TakeRecorder(name)
 
     def _do_delete_gesture(self, name: str) -> None:
-        if self._model:
-            self._model.remove(name)
-            self._model.fit()
-            self._rebuild_gestures()
-            self._worker(self._model.save, profiles.gesture_model_path(self.player))
+        if self._model and name in self._model.names:
+            model = self._model.copy()
+            model.remove(name)
+            self._use_model(model, then=None)
 
     def _do_set_mapping(self, mapping: dict) -> None:
         self._mapping = mapping
@@ -416,18 +415,43 @@ class Runtime:
 
     def _finish_recording(self) -> None:
         recorder, self._take_recorder = self._take_recorder, None
-        if self._model is None:
-            self._model = GestureModel()
+        model = self._model.copy() if self._model else GestureModel()
         for frames in recorder.result():
             if recorder.name is None:
-                self._model.add_negative(frames)
+                model.add_negative(frames)
             else:
-                self._model.add_take(recorder.name, frames)
-        accuracy = self._model.fit()               # the pad is neutral while recording, so a short stall is safe
-        self._rebuild_gestures()
-        self._worker(self._model.save, profiles.gesture_model_path(self.player))
+                model.add_take(recorder.name, frames)
+        for frames in recorder.rest:               # relaxed face between takes teaches "none"
+            model.add_negative(frames)
         name = recorder.name or "none"
-        self._event("gesture_trained", {"name": name, "accuracy": accuracy.get(name)})
+
+        def report(accuracy: dict[str, float]) -> None:
+            score = accuracy.get(name)
+            data = {"name": name, "accuracy": score}
+            if recorder.name is not None and score is not None and score < config.MIN_TAKE_OUT_ACCURACY:
+                data["message"] = (f"{name.replace('_', ' ')} was recognized in {round(score * 100)}% of "
+                                   "held-out takes. Record it again to add takes, or make the movement more distinct.")
+            self._event("gesture_trained", data)
+
+        self._use_model(model, then=report)
+
+    def _use_model(self, model: GestureModel, then) -> None:
+        """Switch to `model` now (it predicts with its previous classifier), fit it and save it on a worker.
+
+        Fitting with leave-one-take-out takes up to about a second, too long for the pipeline thread.
+        """
+        self._model = model
+        self._rebuild_gestures()
+        path = profiles.gesture_model_path(self.player)
+
+        def fit_and_save() -> None:
+            accuracy = model.fit()
+            if self._model is model:               # a newer recording or profile replaced it: keep that one
+                model.save(path)
+            if then:
+                then(accuracy)
+
+        self._worker(fit_and_save)
 
     def _rebuild_gestures(self) -> None:
         defs = self._mapping.get("gestures", {})

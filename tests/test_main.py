@@ -6,8 +6,8 @@ import time
 import numpy as np
 import pytest
 
-from helm import config
-
+from helm import config, profiles
+from helm.gestures import GestureModel
 from helm.main import Runtime, parse_args
 from helm.profiles import default_mapping
 
@@ -56,7 +56,10 @@ def test_fired_is_held_long_enough_for_the_dashboard():
     assert rt._hold_fired((), 400 * ms) == []
 
 
-def test_commands_do_not_break_the_loop():
+def test_commands_do_not_break_the_loop(monkeypatch, tmp_path):
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)              # saves land in a temp dir, not profiles/
+    for name in ("TAKE_READY_S", "TAKE_HOLD_S", "TAKE_RELAX_S"):  # 5 takes in 1.5 s instead of 15 s
+        monkeypatch.setattr(config, name, 0.1)
     rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
     rt.set_paused(False)
     assert rt.set_mapping(default_mapping("SuperTuxKart")) == []
@@ -70,6 +73,11 @@ def test_commands_do_not_break_the_loop():
             rt.record_gesture("left_smirk")                      # so record only after calibration ends
         return "calibration_done" in seen and "gesture_trained" in seen
 
-    _run(rt, done, timeout=5.0)                                  # quick calibration takes 2 s of face time
+    _run(rt, done, timeout=8.0)                                  # quick calibration takes 2 s of face time
     assert "calibration_done" in seen and "gesture_trained" in seen and "error" not in seen
     assert rt.snapshot()["profile"]["calibrated"] == "quick"
+    assert rt.snapshot()["gestures"]["learned"] == ["left_smirk"]
+    deadline = time.monotonic() + 2.0                            # the model is saved on a worker thread
+    while not (tmp_path / "guest" / "gestures.npz").exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert GestureModel.load(str(tmp_path / "guest" / "gestures.npz")).names == ["left_smirk"]

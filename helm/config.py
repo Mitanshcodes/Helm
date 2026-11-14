@@ -82,6 +82,8 @@ SERIAL_STALE_S = 1.0               # no valid line for this long -> report not c
 
 # ------------------------------------------------------------------ P3: learning and evaluation
 KNN_NEIGHBORS = 7
+KNN_POSE_WEIGHT = 0.3              # head pose counts less than the face, so a gesture made while steering still counts
+NEGATIVE_CHUNKS = 5                # negatives are split this many ways for leave-one-out accuracy
 TAKES = 5
 TAKE_READY_S = 1.0
 TAKE_HOLD_S = 1.0
@@ -96,6 +98,8 @@ FATIGUE_WINDOW_S = 120.0
 FATIGUE_BASELINE_S = 60.0
 FATIGUE_DROP_RATIO = 0.75
 FATIGUE_MIN_SCALE = 0.5
+FATIGUE_ATTEMPT_LEVEL = 0.3        # an activation counts as an attempt once it rises past this; its peak is kept
+FATIGUE_MIN_PEAKS = 3              # peaks needed in both the baseline and the recent window before scaling
 
 # ------------------------------------------------------------------ P4: product and story
 SERVER_HOST = "127.0.0.1"
