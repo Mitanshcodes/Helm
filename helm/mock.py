@@ -47,6 +47,54 @@ class MockSource:
                              yaw=yaw, blend=blend)
 
 
+_BLINK_L = BLENDSHAPE_NAMES.index("eyeBlinkLeft")
+_BLINK_R = BLENDSHAPE_NAMES.index("eyeBlinkRight")
+_SMILE_L = BLENDSHAPE_NAMES.index("mouthSmileLeft")
+_SMILE_R = BLENDSHAPE_NAMES.index("mouthSmileRight")
+
+
+def render_preview(f: FrameFeatures, size: tuple[int, int] = config.PREVIEW_SIZE) -> np.ndarray:
+    """A cartoon face drawn from the features, standing in for the camera frame under --mock and --replay.
+
+    Drawn as the camera sees the subject (unmirrored); the server mirrors it like a real frame.
+    """
+    import cv2
+
+    w, h = size
+    img = np.full((h, w, 3), (40, 34, 30), np.uint8)
+    r = h * 0.32
+    if not f.face:                                         # an empty outline (text would come out mirrored)
+        cv2.circle(img, (w // 2, h // 2), int(r), (90, 90, 90), 2, cv2.LINE_AA)
+        return img
+    b = f.blend
+    # +yaw (turn to their own right) and +roll move toward the image's left: the subject's right, unmirrored.
+    cx = w / 2 - r * math.sin(math.radians(max(-60.0, min(60.0, f.yaw))))
+    cy = h / 2 - r * math.sin(math.radians(max(-60.0, min(60.0, f.pitch))))
+    roll = math.radians(f.roll)
+
+    def pt(x: float, y: float) -> tuple[int, int]:      # face-space offset (in radii) -> rotated pixel
+        dx, dy = x * r, y * r
+        return (int(cx + dx * math.cos(roll) + dy * math.sin(roll)),
+                int(cy - dx * math.sin(roll) + dy * math.cos(roll)))
+
+    skin, line = (150, 180, 215), (40, 40, 60)
+    cv2.circle(img, pt(0, 0), int(r), skin, -1, cv2.LINE_AA)
+    brow = 0.15 * float(b[_BROW])
+    # Image-left is the subject's right side.
+    for side, blink in ((-1, b[_BLINK_R]), (1, b[_BLINK_L])):
+        ex = 0.38 * side
+        cv2.line(img, pt(ex - 0.18, -0.42 - brow), pt(ex + 0.18, -0.42 - brow), line, 3, cv2.LINE_AA)
+        open_px = max(1, int(r * 0.1 * (1.0 - float(blink))))
+        cv2.ellipse(img, pt(ex, -0.2), (int(r * 0.12), open_px), -math.degrees(roll), 0, 360, line, -1, cv2.LINE_AA)
+    jaw = float(b[_JAW])
+    smile_r, smile_l = float(b[_SMILE_R]), float(b[_SMILE_L])
+    low = 0.46 + 0.3 * jaw
+    mouth = [pt(-0.35, 0.42 - 0.12 * smile_r), pt(-0.15, 0.40), pt(0.15, 0.40), pt(0.35, 0.42 - 0.12 * smile_l),
+             pt(0.15, low), pt(-0.15, low)]
+    cv2.fillPoly(img, [np.array(mouth, np.int32)], line, cv2.LINE_AA)
+    return img
+
+
 class Recorder:
     """Buffers FrameFeatures in memory and writes one .npz on close. No images are stored."""
 

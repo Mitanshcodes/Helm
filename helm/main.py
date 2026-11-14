@@ -19,7 +19,7 @@ from helm.contracts import AXES, ControlState, FrameFeatures, Progress, Signals
 from helm.filters import Normalizer
 from helm.gestures import GestureEngine, GestureModel, TakeRecorder
 from helm.mapping import Mapper
-from helm.mock import MockSource, Recorder, ReplaySource
+from helm.mock import MockSource, Recorder, ReplaySource, render_preview
 from helm.output import make_gamepad
 from helm.sipnpuff import SipPuff
 from helm.vision import FaceTracker
@@ -105,6 +105,7 @@ class Runtime:
         self._tracker = None if self._source else FaceTracker()
         self._recorder = Recorder(args.record) if args.record else None
         self._last_seq = -1
+        self._draw_preview = self._source is not None and not args.no_server   # cartoon frame for the dashboard
 
         # Stages, in pipeline order.
         self._pad = make_gamepad(args.output)
@@ -131,6 +132,7 @@ class Runtime:
         self._control_ms: deque[float] = deque(maxlen=config.STATS_WINDOW)
         self._total_ms: deque[float] = deque(maxlen=config.STATS_WINDOW)
         self._stats = SessionStats()               # per gesture, for the coach review
+        self._fired_until: dict[str, int] = {}     # gesture or breath event -> perf_counter_ns it leaves "fired"
 
         # Shared with other threads: latest-value slots, plus commands and events that must not be dropped.
         self._lock = threading.Lock()
@@ -246,7 +248,8 @@ class Runtime:
         return self._snapshot
 
     def preview(self) -> tuple[np.ndarray, np.ndarray | None] | None:
-        """Latest bgr frame and landmarks, or None when there is no camera frame (mock, replay)."""
+        """Latest bgr frame and landmarks. Under --mock and --replay, a cartoon face drawn from the features
+        (landmarks None). None before the first frame."""
         return self._preview
 
     def pop_events(self) -> list[dict]:
@@ -304,6 +307,12 @@ class Runtime:
             if f is None:                          # replay ended
                 self._finished.set()
                 self._stop.set()
+            elif self._draw_preview:
+                try:
+                    self._preview = (render_preview(f), None)
+                except Exception:                  # e.g. no cv2: the dashboard shows its placeholder instead
+                    self._draw_preview = False
+                    log.exception("mock preview disabled")
             return f
         got = self._camera.wait_latest(self._last_seq, timeout=0.5)
         if got is None:
@@ -358,6 +367,7 @@ class Runtime:
         t_output_ns = time.perf_counter_ns()
 
         self._stats.update(act, self._thresholds, self._tracked, out.fired, t_s, active=not neutral)
+        self._hold_fired(out.fired, t_output_ns)
         self._frames += 1
         self._capture_times.append(f.t_capture_ns)
         self._vision_ms.append((f.t_infer_ns - f.t_capture_ns) / 1e6)
@@ -426,6 +436,15 @@ class Runtime:
                             for name, g in defs.items() if "on" in g and "off" in g}
         self._tracked = {b["gesture"] for b in self._mapping.get("buttons", []) if "gesture" in b}
 
+    def _hold_fired(self, fired: tuple[str, ...], now_ns: int) -> list[str]:
+        """Keep each fire for FIRED_HOLD_MS: a fire lasts one tick, but the dashboard samples states at 30 Hz."""
+        until = now_ns + config.FIRED_HOLD_MS * 1_000_000
+        held = {name: t for name, t in self._fired_until.items() if t > now_ns}
+        for name in fired:
+            held[name] = until
+        self._fired_until = held
+        return list(held)
+
     def _build_snapshot(self, f: FrameFeatures | None, s: Signals | None, act: dict[str, float],
                         out: ControlState, progress: Progress | None) -> dict:
         times = self._capture_times
@@ -452,10 +471,11 @@ class Runtime:
             "thresholds": self._thresholds,
             "control": {"lx": out.lx, "ly": out.ly, "rx": out.rx, "ry": out.ry, "lt": out.lt, "rt": out.rt,
                         "buttons": sorted(out.buttons)},
-            "fired": list(out.fired),
+            "fired": list(self._fired_until),      # held for FIRED_HOLD_MS, see _hold_fired
             "progress": dataclasses.asdict(progress) if progress else None,
             "gestures": {"learned": self._learned(), "reliable": list(self._calib.reliable) if self._calib else []},
             "notices": self._fatigue.notices(),
+            "mapping": self._mapping,
         }
 
 

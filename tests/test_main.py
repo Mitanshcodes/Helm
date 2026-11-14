@@ -3,11 +3,16 @@
 import json
 import time
 
+import numpy as np
+import pytest
+
+from helm import config
+
 from helm.main import Runtime, parse_args
 from helm.profiles import default_mapping
 
 STATE_KEYS = {"type", "fps", "latency_ms", "face", "paused", "breath_connected", "profile", "raw", "axes",
-              "breath", "activations", "thresholds", "control", "fired", "progress", "gestures", "notices"}
+              "breath", "activations", "thresholds", "control", "fired", "progress", "gestures", "notices", "mapping"}
 
 
 def _run(runtime: Runtime, until, timeout: float = 3.0) -> None:
@@ -28,7 +33,27 @@ def test_mock_runtime_publishes_state():
     assert set(snap) == STATE_KEYS and snap["type"] == "state"
     assert snap["fps"] > 0 and snap["face"] is True
     assert snap["profile"] == {"player": "guest", "game": "SuperTuxKart", "calibrated": None}
+    assert snap["mapping"]["game"] == "SuperTuxKart"             # the active mapping, before any is applied
     json.dumps(snap)                                             # must be plain JSON
+    assert rt.preview() is None                                  # --no-server: no cartoon frame is drawn
+
+
+def test_mock_preview_frame_for_the_dashboard():
+    pytest.importorskip("cv2")
+    rt = Runtime(parse_args(["--mock", "--output", "null"]))     # server on (not started here)
+    _run(rt, lambda: rt.preview() is not None)
+    bgr, landmarks = rt.preview()
+    assert bgr.shape == (*reversed(config.PREVIEW_SIZE), 3) and bgr.dtype == np.uint8 and landmarks is None
+
+
+def test_fired_is_held_long_enough_for_the_dashboard():
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
+    ms = 1_000_000
+    assert rt._hold_fired(("brow_raise",), 0) == ["brow_raise"]
+    assert rt._hold_fired((), 100 * ms) == ["brow_raise"]                       # still there 100 ms later
+    assert set(rt._hold_fired(("soft_puff",), 140 * ms)) == {"brow_raise", "soft_puff"}
+    assert rt._hold_fired((), (config.FIRED_HOLD_MS + 1) * ms) == ["soft_puff"]   # brow_raise expired
+    assert rt._hold_fired((), 400 * ms) == []
 
 
 def test_commands_do_not_break_the_loop():
