@@ -40,7 +40,7 @@ RELIABLE_MIN_PEAK_ABOVE_NEUTRAL = 0.15
 # Calibration never prompts for these, so they are trusted without a check: blinks drive the pause
 # gesture in every mapping, and quick mode also trusts the two expressions the judge profile uses.
 ASSUMED_RELIABLE = ("eyeBlinkLeft", "eyeBlinkRight")
-QUICK_ASSUMED_RELIABLE = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight")   # default face buttons
+QUICK_ASSUMED_RELIABLE = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight", "mouthPucker")
 
 FACE_LOST_MS = 200                 # pad goes neutral after this long without a face
 STATS_WINDOW = 60                  # frames in the rolling fps and latency medians

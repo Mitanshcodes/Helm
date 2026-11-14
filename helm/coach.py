@@ -36,7 +36,9 @@ learned gestures, whether breath is available, and (for a review) per-gesture se
 most time-critical actions go to the player's strongest, least tiring gestures. Held actions never share a \
 muscle group (brow, jaw, mouth, eyes, breath). Rare actions can go to weaker gestures or stay unmapped. \
 Never use an expression that is not in the reliable list. If the player cannot comfortably hold accelerate, \
-use "auto": {"rt": 1.0}, or a breath toggle when breath is available.
+use "auto": {"rt": 1.0}, or a breath toggle when breath is available. Always map all four face buttons A, B, \
+X and Y, each to a different gesture from usable_gestures (the report lists them strongest first); \
+check_mapping rejects a mapping that leaves one empty while a usable gesture is still unused.
 4. Draft the mapping JSON, call check_mapping, fix every error it reports, and repeat until it returns no errors.
 5. Call submit_mapping with the final JSON and one short reason per decision. You are done when it is accepted.
 
@@ -56,7 +58,7 @@ Mapping format (JSON):
  "pause": {"gesture": "<name>", "hold_ms": 2000}}
 A learned gesture's name must be one of the player's learned gestures. A breath gesture's name is one of \
 soft_sip, hard_sip, soft_puff, hard_puff and needs a breath sensor. Keep the pause gesture as eyes closed \
-(eyeBlinkLeft + eyeBlinkRight, combine "min") held 1000 ms unless the report says the eyes are unreliable. \
+(eyeBlinkLeft + eyeBlinkRight, combine "min", on 0.85, off 0.6) held 2000 ms unless the report says the eyes are unreliable. \
 "on" must be greater than "off", both in (0, 1)."""
 
 
@@ -76,7 +78,7 @@ def game_controls(game: str) -> dict:
 def player_report(calib: Calibration, learned: list[str], has_breath: bool, stats: dict | None = None) -> dict:
     """What the player can do, as plain numbers. No images, no raw frames."""
     expressions = []
-    for name in calib.reliable:
+    for name in sorted(usable_expressions(calib)):
         if name not in BLENDSHAPE_NAMES:
             continue
         i = BLENDSHAPE_NAMES.index(name)
@@ -98,6 +100,8 @@ def player_report(calib: Calibration, learned: list[str], has_breath: bool, stat
                               "roll": "negative = tilt left, positive = tilt right"},
         "reliable_expressions": expressions,
         "unreliable_or_untested": "every other blendshape: never use them",
+        "usable_gestures": [{"name": n, "definition": g, "what_the_player_does": d}
+                            for n, g, d in _candidates(calib, learned, has_breath)],
         "learned_gestures": list(learned),
         "breath_sensor": has_breath,
     }
@@ -130,7 +134,7 @@ def _own_errors(m: dict, calib: Calibration, learned: list[str], has_breath: boo
         if key not in m:
             errors.append(f"missing key {key!r}")
     gestures = m.get("gestures") if isinstance(m.get("gestures"), dict) else {}
-    reliable = set(calib.reliable)
+    reliable = usable_expressions(calib)
     for name, g in gestures.items():
         kind = g.get("kind") if isinstance(g, dict) else None
         if kind == "blendshape":
@@ -190,17 +194,26 @@ def _own_errors(m: dict, calib: Calibration, learned: list[str], has_breath: boo
     pause = m.get("pause") or {}
     if pause.get("gesture") not in gestures:
         errors.append("a pause gesture must be set and defined in gestures")
+    missing = _missing_face_buttons(m)
+    spare = [n for n, _, _ in _spare(m, calib, learned, has_breath)]
+    if missing and spare:
+        errors.append(f"face buttons {', '.join(missing)} are unmapped: map each to a different unused gesture "
+                      f"from {spare}")
     return errors
 
 
 # ------------------------------------------------------------------ offline path
 
 def offline_mapping(game: str, calib: Calibration, learned: list[str], has_breath: bool) -> dict:
-    """The default mapping for the game, with everything this player cannot do removed. Always valid."""
+    """The default mapping for the game, minus what this player cannot do, with every face button filled. Valid."""
+    return _offline(game, calib, learned, has_breath)[0]
+
+
+def _offline(game: str, calib: Calibration, learned: list[str], has_breath: bool) -> tuple[dict, list[str]]:
     m = copy.deepcopy(profiles.default_mapping(game))
     m["player"], m["game"] = calib.player, game
     gestures = m.get("gestures", {})
-    reliable = set(calib.reliable)
+    reliable = usable_expressions(calib)
 
     def usable(g: dict, name: str) -> bool:
         kind = g.get("kind")
@@ -222,9 +235,135 @@ def offline_mapping(game: str, calib: Calibration, learned: list[str], has_breat
         gestures["eyes_closed"] = {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"],
                                    "combine": "min", "on": config.PAUSE_ON, "off": config.PAUSE_OFF}
         m["pause"] = {"gesture": "eyes_closed", "hold_ms": config.PAUSE_HOLD_MS}
+    _fill(m, game, calib, learned, has_breath)
     if check(m, calib, learned, has_breath):
-        m = _minimal_mapping(game, calib)              # last resort: steer and pause only
-    return m
+        m = _minimal_mapping(game, calib)              # last resort: steer and pause, plus what can be filled
+        _fill(m, game, calib, learned, has_breath)
+    return m, describe(m, game)
+
+
+# Face expressions the coach builds gestures from, in default preference order: name, blendshape, on, off, words.
+_EXPRESSIONS = (
+    ("brow_raise", "browInnerUp", 0.6, 0.4, "eyebrow raise"),
+    ("smile_left", "mouthSmileLeft", 0.6, 0.4, "smile on your left side"),
+    ("smile_right", "mouthSmileRight", 0.6, 0.4, "smile on your right side"),
+    ("jaw_open", "jawOpen", 0.7, 0.45, "mouth open wide"),
+    ("pucker", "mouthPucker", 0.6, 0.4, "pucker your lips"),
+    ("cheek_puff", "cheekPuff", 0.6, 0.4, "puff your cheeks"),
+)
+_FACE_BUTTONS = ("A", "B", "X", "Y")
+_FREQUENCY_RANK = {"constant": 0, "often": 1, "occasional": 2, "rare": 3}
+
+
+def usable_expressions(calib: Calibration) -> set[str]:
+    """Blendshapes the coach may use. After a full calibration, the ones that passed the check; otherwise also
+    the ones quick mode trusts (profiles.validate_mapping only checks reliability after a full calibration)."""
+    usable = set(calib.reliable)
+    if calib.mode != "full":
+        usable |= set(config.QUICK_ASSUMED_RELIABLE)
+    return usable
+
+
+def _candidates(calib: Calibration, learned: list[str], has_breath: bool) -> list[tuple[str, dict, str]]:
+    """Every gesture this player can use for a button, best first: (name, definition, what the player does).
+    Learned moves first (the player taught them on purpose), then expressions, strongest measured first,
+    then breath."""
+    usable = usable_expressions(calib)
+
+    def strength(blend: str) -> float:
+        peak = calib.blend_peak.get(blend)
+        if peak is None:
+            return -1.0                                # unmeasured: after the measured ones, in default order
+        i = BLENDSHAPE_NAMES.index(blend)
+        return peak - (calib.blend_neutral[i] if len(calib.blend_neutral) > i else 0.0)
+
+    out = [(n, {"kind": "learned", "on": 0.7, "off": 0.5}, f"your move \"{n.replace('_', ' ')}\"")
+           for n in learned]
+    face = sorted((e for e in _EXPRESSIONS if e[1] in usable), key=lambda e: -strength(e[1]))
+    out += [(n, {"kind": "blendshape", "sources": [b], "on": on, "off": off}, words)
+            for n, b, on, off, words in face]
+    if has_breath:
+        out += [(n, {"kind": "breath"}, n.replace("_", " ")) for n in ("hard_puff", "hard_sip", "soft_puff", "soft_sip")]
+    return out
+
+
+def _used(m: dict) -> tuple[set[str], set[str]]:
+    """Gesture names that drive something, and the blendshapes behind them."""
+    gestures = m.get("gestures") if isinstance(m.get("gestures"), dict) else {}
+    names = {b.get("gesture") for b in m.get("buttons", []) if isinstance(b, dict)}
+    names |= {t.get("source") for t in m.get("triggers", []) if isinstance(t, dict)}
+    names.add((m.get("pause") or {}).get("gesture"))
+    sources = {s for n in names for s in ((gestures.get(n) or {}).get("sources") or [])}
+    return names, sources
+
+
+def _spare(m: dict, calib: Calibration, learned: list[str], has_breath: bool) -> list[tuple[str, dict, str]]:
+    names, sources = _used(m)
+    return [(n, g, d) for n, g, d in _candidates(calib, learned, has_breath)
+            if n not in names and not set(g.get("sources") or []) & sources]
+
+
+def _missing_face_buttons(m: dict) -> list[str]:
+    taken = {b.get("target") for b in m.get("buttons", []) if isinstance(b, dict)}
+    return [t for t in _FACE_BUTTONS if t not in taken]
+
+
+def _fill(m: dict, game: str, calib: Calibration, learned: list[str], has_breath: bool) -> None:
+    """Map every empty face button (most used action first) to the best unused gesture, and make a constant
+    held trigger (accelerate) automatic when nothing drives it."""
+    actions = {a["target"]: a for a in game_controls(game).get("actions", []) if isinstance(a, dict) and "target" in a}
+    gestures = m.setdefault("gestures", {})
+    buttons = m.setdefault("buttons", [])
+    missing = sorted(_missing_face_buttons(m), key=lambda t: _FREQUENCY_RANK.get(actions.get(t, {}).get("frequency"), 4))
+    pool = _spare(m, calib, learned, has_breath)
+    for target in missing:
+        if not pool:
+            break
+        name, definition, _ = pool.pop(0)
+        if gestures.get(name, {}).get("kind") != definition["kind"]:
+            gestures[name] = definition
+        held = actions.get(target, {}).get("kind") == "held"
+        buttons.append({"gesture": name, "target": target, "mode": "hold" if held else "tap"})
+    driven = ({b.get("target") for b in buttons} | {t.get("target") for t in m.get("triggers", [])}
+              | set(m.get("auto") or {}))
+    rt = actions.get("rt")
+    if rt and rt.get("frequency") == "constant" and "rt" not in driven:
+        m.setdefault("auto", {})["rt"] = 1.0
+
+
+def describe(m: dict, game: str) -> list[str]:
+    """One plain line per face button and the throttle, for the dashboard."""
+    actions = {a["target"]: a["name"] for a in game_controls(game).get("actions", []) if isinstance(a, dict) and "target" in a}
+    gestures = m.get("gestures") or {}
+    words = {n: w for n, _, _, _, w in _EXPRESSIONS}
+
+    def what(name: str) -> str:
+        g = gestures.get(name) or {}
+        if g.get("kind") == "learned":
+            return f"your move \"{name.replace('_', ' ')}\""
+        if g.get("kind") == "blendshape" and len(g.get("sources") or []) == 1:
+            for n, b, _, _, w in _EXPRESSIONS:
+                if g["sources"][0] == b:
+                    return w
+        return words.get(name, name.replace("_", " "))
+
+    lines = []
+    by_target = {b.get("target"): b for b in m.get("buttons", []) if isinstance(b, dict)}
+    for target in _FACE_BUTTONS:
+        action = f" ({actions[target]})" if target in actions else ""
+        b = by_target.get(target)
+        if b:
+            hold = ", hold it" if b.get("mode") == "hold" else ""
+            lines.append(f"{target}{action}: {what(b['gesture'])}{hold}")
+        else:
+            lines.append(f"{target}{action}: unmapped, no reliable gesture left (teach a move or recalibrate)")
+    if (m.get("auto") or {}).get("rt"):
+        lines.append(f"{actions.get('rt', 'Right trigger').capitalize()}: automatic, always on")
+    pause = m.get("pause") or {}
+    if pause.get("gesture"):
+        lines.append(f"Pause: {what(pause['gesture']).replace('eyes closed', 'close your eyes')} for "
+                     f"{pause.get('hold_ms', config.PAUSE_HOLD_MS) / 1000:g} s")
+    return lines
 
 
 def _minimal_mapping(game: str, calib: Calibration) -> dict:
@@ -427,8 +566,9 @@ def build_mapping(game: str, calib: Calibration, learned: list[str], has_breath:
         result = None
     if result is not None:
         return {"mapping": result[0], "rationale": result[1]}
-    return {"mapping": offline_mapping(game, calib, learned, has_breath),
-            "rationale": ["offline default", *_offline_note(session)]}
+    mapping, lines = _offline(game, calib, learned, has_breath)
+    return {"mapping": mapping, "rationale": ["Offline coach (built without the AI model):", *lines,
+                                              *_offline_note(session)]}
 
 
 def review_session(mapping: dict, stats: dict, calib: Calibration, learned: list[str], has_breath: bool) -> dict:
@@ -445,8 +585,19 @@ def review_session(mapping: dict, stats: dict, calib: Calibration, learned: list
         result = None
     if result is not None:
         return {"mapping": result[0], "changes": result[1]}
-    if check(mapping, calib, learned, has_breath):     # the current mapping no longer fits this player
-        mapping = offline_mapping(game, calib, learned, has_breath)
+    filled: list[str] = []
+    if check(mapping, calib, learned, has_breath):     # fill empty face buttons; rebuild only if that is not enough
+        candidate = copy.deepcopy(mapping)
+        before = _missing_face_buttons(candidate)
+        _fill(candidate, game, calib, learned, has_breath)
+        if not check(candidate, calib, learned, has_breath):
+            mapping = candidate
+            filled = [line for line in describe(candidate, game) if line[:1] in before and "unmapped" not in line]
+            filled = [f"Mapped an empty button: {line}" for line in filled]
+        else:
+            mapping = offline_mapping(game, calib, learned, has_breath)
+            filled = ["The mapping no longer fit this player, so it was rebuilt:", *describe(mapping, game)]
     reviewed, changes = offline_review(mapping, stats, calib, learned, has_breath)
+    changes = filled + changes
     return {"mapping": reviewed,
             "changes": (changes or ["offline review: no changes needed"]) + _offline_note(session)}
