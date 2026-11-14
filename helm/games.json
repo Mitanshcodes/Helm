@@ -1,12 +1,38 @@
 {
   "SuperTuxKart": {
+    "notes": "Kart racer. Steering is constant and analog; accelerate is held almost all race; items and nitro are frequent and time-critical. Bind the gamepad in the game's settings to these targets once.",
     "actions": [
       {"name": "steer",      "kind": "axis",   "analog": true,  "frequency": "constant",   "target": "lx"},
       {"name": "accelerate", "kind": "held",   "analog": true,  "frequency": "constant",   "target": "rt"},
       {"name": "brake",      "kind": "held",   "analog": true,  "frequency": "occasional", "target": "lt"},
       {"name": "fire item",  "kind": "tapped", "analog": false, "frequency": "often",      "target": "A"},
       {"name": "nitro",      "kind": "held",   "analog": false, "frequency": "often",      "target": "B"},
-      {"name": "rescue",     "kind": "tapped", "analog": false, "frequency": "rare",       "target": "X"}
+      {"name": "skid",       "kind": "held",   "analog": false, "frequency": "occasional", "target": "RB"},
+      {"name": "rescue",     "kind": "tapped", "analog": false, "frequency": "rare",       "target": "X"},
+      {"name": "look back",  "kind": "held",   "analog": false, "frequency": "rare",       "target": "Y"},
+      {"name": "pause menu", "kind": "tapped", "analog": false, "frequency": "rare",       "target": "START"}
+    ]
+  },
+  "Celeste": {
+    "notes": "Precision platformer. Movement and jump timing matter most; dash is frequent.",
+    "actions": [
+      {"name": "move",  "kind": "axis",   "analog": true,  "frequency": "constant", "target": "lx"},
+      {"name": "aim",   "kind": "axis",   "analog": true,  "frequency": "often",    "target": "ly"},
+      {"name": "jump",  "kind": "tapped", "analog": false, "frequency": "constant", "target": "A"},
+      {"name": "dash",  "kind": "tapped", "analog": false, "frequency": "often",    "target": "X"},
+      {"name": "climb", "kind": "held",   "analog": false, "frequency": "often",    "target": "rt"}
+    ]
+  },
+  "Minecraft": {
+    "notes": "Sandbox. Slow-paced; looking around and walking are constant, mining is held.",
+    "actions": [
+      {"name": "turn",           "kind": "axis",   "analog": true,  "frequency": "constant",   "target": "rx"},
+      {"name": "look up/down",   "kind": "axis",   "analog": true,  "frequency": "often",      "target": "ry"},
+      {"name": "walk",           "kind": "axis",   "analog": true,  "frequency": "constant",   "target": "ly"},
+      {"name": "mine or attack", "kind": "held",   "analog": false, "frequency": "often",      "target": "rt"},
+      {"name": "place or use",   "kind": "tapped", "analog": false, "frequency": "often",      "target": "lt"},
+      {"name": "jump",           "kind": "tapped", "analog": false, "frequency": "occasional", "target": "A"},
+      {"name": "inventory",      "kind": "tapped", "analog": false, "frequency": "rare",       "target": "Y"}
     ]
   }
 }

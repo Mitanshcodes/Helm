@@ -11,3 +11,5 @@ pynput
 vgamepad; sys_platform == "win32"
 pytest
 # P1 appends the coach packages (deepagents and one model provider) when starting coach.py.
+deepagents
+langchain-anthropic

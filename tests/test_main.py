@@ -45,6 +45,6 @@ def test_commands_do_not_break_the_loop():
             rt.record_gesture("left_smirk")                      # so record only after calibration ends
         return "calibration_done" in seen and "gesture_trained" in seen
 
-    _run(rt, done)
+    _run(rt, done, timeout=5.0)                                  # quick calibration takes 2 s of face time
     assert "calibration_done" in seen and "gesture_trained" in seen and "error" not in seen
     assert rt.snapshot()["profile"]["calibrated"] == "quick"

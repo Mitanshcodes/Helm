@@ -32,6 +32,62 @@ def _load_model(player: str) -> GestureModel | None:
     return GestureModel.load(path) if os.path.exists(path) else None
 
 
+class SessionStats:
+    """Per mapped gesture: fires, near-misses and the peak level of each attempt, for the coach and the dashboard.
+
+    An attempt opens when the level reaches NEAR_MISS_RATIO of `on` and closes when it falls below half of `on`.
+    A closed attempt that did not fire is a near-miss. Updated on the pipeline thread; read with summary().
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._g: dict[str, dict] = {}
+        self._active_s = 0.0
+        self._last_t: float | None = None
+
+    def update(self, act: dict[str, float], thresholds: dict[str, dict[str, float]], tracked: set[str],
+               fired: tuple[str, ...], t_s: float, active: bool) -> None:
+        dt = 0.0 if self._last_t is None else min(max(t_s - self._last_t, 0.0), 0.1)
+        self._last_t = t_s
+        if not active:                             # calibrating, recording, paused or face lost
+            return
+        with self._lock:
+            self._active_s += dt
+            for name in tracked:
+                th = thresholds.get(name)
+                if th is None:
+                    continue
+                level = act.get(name, 0.0)
+                g = self._g.setdefault(name, {"fires": 0, "near_misses": 0, "peaks": deque(maxlen=50),
+                                              "open": False, "peak": 0.0, "fired": False})
+                g["on"], g["off"] = th["on"], th["off"]
+                did_fire = name in fired
+                if did_fire:
+                    g["fires"] += 1
+                if not g["open"]:
+                    if level >= config.NEAR_MISS_RATIO * th["on"] or did_fire:
+                        g["open"], g["peak"], g["fired"] = True, level, did_fire
+                    continue
+                g["peak"] = max(g["peak"], level)
+                g["fired"] = g["fired"] or did_fire
+                if level < 0.5 * th["on"]:
+                    g["peaks"].append(round(g["peak"], 3))
+                    if not g["fired"]:
+                        g["near_misses"] += 1
+                    g["open"] = False
+
+    def summary(self) -> dict:
+        with self._lock:
+            minutes = self._active_s / 60.0
+            return {
+                "active_s": round(self._active_s, 1),
+                "gestures": {name: {"fires": g["fires"], "near_misses": g["near_misses"],
+                                    "fires_per_min": round(g["fires"] / minutes, 2) if minutes > 0 else 0.0,
+                                    "peaks": list(g["peaks"]), "on": g.get("on"), "off": g.get("off")}
+                             for name, g in self._g.items()},
+            }
+
+
 class Runtime:
     def __init__(self, args):
         self.args = args
@@ -74,7 +130,7 @@ class Runtime:
         self._vision_ms: deque[float] = deque(maxlen=config.STATS_WINDOW)
         self._control_ms: deque[float] = deque(maxlen=config.STATS_WINDOW)
         self._total_ms: deque[float] = deque(maxlen=config.STATS_WINDOW)
-        self._stats: dict[str, dict] = {}          # per gesture, for the coach. TODO(P1): peaks, near-misses
+        self._stats = SessionStats()               # per gesture, for the coach review
 
         # Shared with other threads: latest-value slots, plus commands and events that must not be dropped.
         self._lock = threading.Lock()
@@ -124,6 +180,9 @@ class Runtime:
     # ------------------------------------------------------------------ called by server.py (asyncio thread)
 
     def start_calibration(self, mode: str) -> None:
+        if mode not in ("full", "quick"):
+            self._event("error", {"message": f"calibration mode must be full or quick, not {mode!r}"})
+            return
         self._request("calibrate", mode)
 
     def record_gesture(self, name: str) -> None:
@@ -175,7 +234,7 @@ class Runtime:
     def coach_review(self) -> None:
         def review() -> None:
             calib = self._calib or default_calibration(self.player)
-            stats = {"gestures": self._stats, "notices": self._fatigue.notices()}
+            stats = {**self._stats.summary(), "notices": self._fatigue.notices()}
             result = coach.review_session(self._mapping, stats, calib, self._learned(), self._sip.connected)
             self._event("coach_result", {"mapping": result["mapping"], "rationale": [],
                                          "changes": result.get("changes", [])})
@@ -266,11 +325,14 @@ class Runtime:
             progress = self._calibrator.feed(f, t_s)
             if progress.done:
                 self._calib = self._calibrator.result()
+                notes = self._calibrator.notes
                 self._calibrator = None
                 self._normalizer.set_calibration(self._calib)
                 self._rebuild_gestures()
                 self._worker(profiles.save_calibration, self._calib)
-                self._event("calibration_done", {"mode": self._calib.mode})
+                self._event("calibration_done", {"mode": self._calib.mode, "reliable": list(self._calib.reliable),
+                                                 "range": {a: list(r) for a, r in self._calib.range.items()},
+                                                 "notes": notes})
                 progress = None
 
         s = self._normalizer.update(f, breath=self._sip.level, idle=self._last_idle)
@@ -295,8 +357,7 @@ class Runtime:
         self._pad.apply(out)
         t_output_ns = time.perf_counter_ns()
 
-        for name in out.fired:
-            self._stats.setdefault(name, {"fires": 0})["fires"] += 1
+        self._stats.update(act, self._thresholds, self._tracked, out.fired, t_s, active=not neutral)
         self._frames += 1
         self._capture_times.append(f.t_capture_ns)
         self._vision_ms.append((f.t_infer_ns - f.t_capture_ns) / 1e6)
@@ -337,7 +398,7 @@ class Runtime:
         self._fatigue = FatigueTracker()
         self._mapper.set_mapping(mapping)
         self._rebuild_gestures()
-        self._stats = {}
+        self._stats = SessionStats()
         self._event("profile_loaded", {"player": player, "game": game})
 
     def _do_set_paused(self, on: bool) -> None:
@@ -363,6 +424,7 @@ class Runtime:
         self._gestures = GestureEngine(self._calib, defs, self._model)
         self._thresholds = {name: {"on": g["on"], "off": g["off"]}
                             for name, g in defs.items() if "on" in g and "off" in g}
+        self._tracked = {b["gesture"] for b in self._mapping.get("buttons", []) if "gesture" in b}
 
     def _build_snapshot(self, f: FrameFeatures | None, s: Signals | None, act: dict[str, float],
                         out: ControlState, progress: Progress | None) -> dict:
