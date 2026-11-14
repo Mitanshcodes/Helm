@@ -123,7 +123,9 @@ class Recorder:
 
 
 class ReplaySource:
-    """Plays a Recorder file back. Timestamps are re-stamped to now; the recorded vision delay is kept."""
+    """Plays a Recorder file back. realtime=True paces frames as recorded and re-stamps them to now (the
+    runtime compares them with the clock); realtime=False returns them at once with the recorded timestamps,
+    so offline evaluation sees the session's real timing (hold times, filters)."""
 
     def __init__(self, path: str, realtime: bool = True):
         with np.load(path) as data:
@@ -144,8 +146,12 @@ class ReplaySource:
             wait = due - time.perf_counter()
             if wait > 0:
                 time.sleep(wait)
-        now = time.perf_counter_ns()
-        vision_ns = int(d["t_infer_ns"][i]) - int(d["t_capture_ns"][i])
-        return FrameFeatures(seq=int(d["seq"][i]), t_capture_ns=now - vision_ns, t_infer_ns=now,
+        if self._realtime:
+            now = time.perf_counter_ns()
+            vision_ns = int(d["t_infer_ns"][i]) - int(d["t_capture_ns"][i])
+            t_capture_ns, t_infer_ns = now - vision_ns, now
+        else:
+            t_capture_ns, t_infer_ns = int(d["t_capture_ns"][i]), int(d["t_infer_ns"][i])
+        return FrameFeatures(seq=int(d["seq"][i]), t_capture_ns=t_capture_ns, t_infer_ns=t_infer_ns,
                              face=bool(d["face"][i]), yaw=float(d["yaw"][i]), pitch=float(d["pitch"][i]),
                              roll=float(d["roll"][i]), blend=d["blend"][i].astype(np.float32))

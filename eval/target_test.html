@@ -1,21 +1,254 @@
 <!-- OWNER: P3 -->
-<!-- Ring-of-targets test driven by the virtual pad (docs/SPEC.md 12, eval 3). Bootstrap stub. -->
+<!-- Ring-of-targets throughput test driven by the virtual pad (docs/SPEC.md 12, eval 3). Open in Chrome or Edge,
+     full screen (F11). The left stick moves the cursor, button A selects (a mouse click in the mouse condition).
+     At the end, "Download CSV" saves the trials for eval/results/ and eval/analysis.py. -->
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <title>Helm target test</title>
     <style>
-      body { margin: 0; background: #111; color: #888; font: 20px system-ui, sans-serif; }
-      canvas { display: block; width: 100vw; height: 100vh; }
+      html, body { margin: 0; height: 100%; background: #f6f4ef; color: #1c2026; font: 18px system-ui, sans-serif; }
+      canvas { display: block; position: fixed; inset: 0; }
+      .panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, 92vw);
+               background: #fff; border: 1px solid #e4e0d8; border-radius: 20px; padding: 28px; box-sizing: border-box; }
+      .panel h1 { margin: 0 0 6px; font-size: 26px; }
+      .panel p { margin: 6px 0 14px; color: #5a6170; line-height: 1.4; }
+      label { display: block; margin: 14px 0 6px; font-weight: 700; }
+      input, select { width: 100%; box-sizing: border-box; min-height: 46px; padding: 0 12px; font: inherit;
+                      border: 2px solid #e4e0d8; border-radius: 12px; background: #fff; }
+      .check { display: flex; gap: 10px; align-items: center; font-weight: 400; }
+      .check input { width: 22px; min-height: 22px; }
+      button { margin-top: 20px; min-height: 50px; padding: 0 22px; font: inherit; font-weight: 700; border-radius: 12px;
+               border: 2px solid #2457e6; background: #2457e6; color: #fff; cursor: pointer; }
+      button.quiet { background: #fff; color: #1c2026; border-color: #1c2026; margin-left: 8px; }
+      #hud { position: fixed; left: 16px; top: 12px; color: #5a6170; font-variant-numeric: tabular-nums; }
+      #pad { position: fixed; right: 16px; top: 12px; color: #5a6170; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+      td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid #e4e0d8; }
+      .hidden { display: none; }
     </style>
   </head>
   <body>
-    <canvas id="ring"></canvas>
+    <canvas id="c"></canvas>
+    <div id="hud"></div>
+    <div id="pad"></div>
+
+    <div class="panel" id="setup">
+      <h1>Target test</h1>
+      <p>Move the cursor onto the highlighted circle and select it. Be quick, but try to land inside.
+         Press any gamepad button once first so the browser sees the pad.</p>
+      <label for="who">Participant</label>
+      <input id="who" placeholder="e.g. sam" autocomplete="off" />
+      <label for="cond">Condition</label>
+      <select id="cond">
+        <option value="helm">(c) Helm, calibrated to the small range</option>
+        <option value="fixed">(d) Fixed gain, no per-player scaling</option>
+        <option value="mouse">Mouse baseline</option>
+      </select>
+      <label for="mode">Cursor control</label>
+      <select id="mode">
+        <option value="rate">Rate: stick sets the cursor's speed</option>
+        <option value="position">Position: stick sets where the cursor is</option>
+      </select>
+      <label class="check"><input type="checkbox" id="practice" checked /> One practice block first (not saved)</label>
+      <button id="start">Start</button>
+    </div>
+
+    <div class="panel hidden" id="done">
+      <h1>Done</h1>
+      <p id="summary"></p>
+      <table id="blocks"></table>
+      <button id="download">Download CSV</button><button class="quiet" id="again">Run again</button>
+    </div>
+
     <script>
-      // TODO(P3): ring of 9 circular targets, two widths and two distances. The left stick moves a
-      // cursor and button A selects. Log each trial (condition, distance, width, movement time, hit
-      // point) and offer the log as a CSV download for eval/results/.
+      // ---- the task: ISO 9241-9 style ring, 9 targets, two distances x two widths (fractions of the short side)
+      const N = 9;
+      const DISTANCES = [0.36, 0.68];  // ring diameter / min(width, height)
+      const WIDTHS = [0.11, 0.06];     // target diameter / min(width, height)
+      const BLOCKS = [];
+      for (const d of DISTANCES) for (const w of WIDTHS) BLOCKS.push({ d, w });
+      const RATE_SPEED = 0.85;         // cursor speed at full deflection, in short sides per second
+      const DEADZONE = 0.04;           // Helm already applies its own dead zone; this only hides float noise
+
+      const canvas = document.getElementById("c");
+      const ctx = canvas.getContext("2d");
+      const hud = document.getElementById("hud");
+      const padInfo = document.getElementById("pad");
+      const params = new URLSearchParams(location.search);
+      for (const id of ["who", "cond", "mode"]) if (params.get(id)) document.getElementById(id).value = params.get(id);
+
+      let W = 0, H = 0, S = 0;
+      function resize() {
+        W = canvas.width = innerWidth * devicePixelRatio;
+        H = canvas.height = innerHeight * devicePixelRatio;
+        canvas.style.width = innerWidth + "px";
+        canvas.style.height = innerHeight + "px";
+        S = Math.min(W, H);
+      }
+      addEventListener("resize", resize);
+      resize();
+
+      // ---- state
+      let run = null;  // { who, cond, mode, blocks: [...], bi, order, k, started, t0, from, cursor, trials, practice }
+      let prevA = false, lastT = performance.now();
+      const cursor = { x: 0, y: 0 };
+
+      function targets(block) {
+        const r = (block.d * S) / 2;
+        return Array.from({ length: N }, (_, i) => {
+          const a = -Math.PI / 2 + (2 * Math.PI * i) / N;
+          return { x: W / 2 + r * Math.cos(a), y: H / 2 + r * Math.sin(a) };
+        });
+      }
+      // Alternate across the ring: 0, 5, 1, 6, 2, 7, 3, 8, 4, 0 (every move crosses the centre)
+      const ORDER = Array.from({ length: N + 1 }, (_, k) => (k * Math.ceil(N / 2)) % N);
+
+      function startRun() {
+        const who = document.getElementById("who").value.trim() || "anonymous";
+        const cond = document.getElementById("cond").value;
+        const mode = document.getElementById("mode").value;
+        const practice = document.getElementById("practice").checked;
+        const blocks = (practice ? [{ ...BLOCKS[0], practice: true }] : []).concat(BLOCKS.map((b) => ({ ...b })));
+        run = { who, cond, mode, blocks, bi: 0, k: 0, t0: 0, trials: [], from: null };
+        cursor.x = W / 2; cursor.y = H / 2;
+        document.getElementById("setup").classList.add("hidden");
+        canvas.style.cursor = cond === "mouse" ? "none" : "default";
+      }
+
+      function select() {
+        const block = run.blocks[run.bi];
+        const ts = targets(block);
+        const target = ts[ORDER[run.k]];
+        const now = performance.now();
+        const hit = Math.hypot(cursor.x - target.x, cursor.y - target.y) <= (block.w * S) / 2;
+        if (run.k > 0 && !block.practice) {
+          run.trials.push({
+            participant: run.who, condition: run.cond, mode: run.mode, block: run.bi - (run.blocks[0].practice ? 1 : 0) + 1,
+            width: Math.round(block.w * S), distance: Math.round(block.d * S), trial: run.k,
+            mt_ms: Math.round(now - run.t0), sel_x: Math.round(cursor.x), sel_y: Math.round(cursor.y),
+            from_x: Math.round(run.from.x), from_y: Math.round(run.from.y), to_x: Math.round(target.x), to_y: Math.round(target.y),
+            hit: hit ? 1 : 0, screen_w: W, screen_h: H,
+          });
+        }
+        run.from = target;   // the next movement starts from this target's centre
+        run.t0 = now;        // the first selection of a block only starts the clock
+        run.k += 1;
+        if (run.k > N) { run.bi += 1; run.k = 0; run.from = null; }
+        if (run.bi >= run.blocks.length) finish();
+      }
+
+      // ---- throughput, same formula as eval/analysis.py
+      function throughput(trials) {
+        const dx = [], ae = [];
+        for (const t of trials) {
+          const ax = t.to_x - t.from_x, ay = t.to_y - t.from_y, a = Math.hypot(ax, ay) || 1;
+          const d = ((t.sel_x - t.to_x) * ax + (t.sel_y - t.to_y) * ay) / a;
+          dx.push(d); ae.push(a + d);
+        }
+        const mean = (v) => v.reduce((s, x) => s + x, 0) / v.length;
+        const m = mean(dx);
+        const sd = Math.sqrt(dx.reduce((s, x) => s + (x - m) ** 2, 0) / Math.max(1, dx.length - 1));
+        const we = 4.133 * sd;
+        const ide = Math.log2(mean(ae) / we + 1);
+        const mt = mean(trials.map((t) => t.mt_ms)) / 1000;
+        return { tp: ide / mt, ide, we, mt, errors: trials.filter((t) => !t.hit).length / trials.length };
+      }
+
+      function finish() {
+        const byBlock = {};
+        for (const t of run.trials) (byBlock[t.block] ??= []).push(t);
+        const rows = Object.entries(byBlock).map(([b, ts]) => ({ b, ts, ...throughput(ts) }));
+        const tp = rows.reduce((s, r) => s + r.tp, 0) / rows.length;
+        document.getElementById("summary").textContent =
+          `${run.who} · ${run.cond} · ${run.mode}: throughput ${tp.toFixed(2)} bits/s over ${rows.length} blocks, ${run.trials.length} trials.`;
+        document.getElementById("blocks").innerHTML =
+          "<tr><th>Block</th><th>Distance</th><th>Width</th><th>Time</th><th>Misses</th><th>Throughput</th></tr>" +
+          rows.map((r) => `<tr><td>${r.b}</td><td>${r.ts[0].distance}px</td><td>${r.ts[0].width}px</td><td>${Math.round(r.mt * 1000)} ms</td>` +
+            `<td>${Math.round(r.errors * 100)}%</td><td>${r.tp.toFixed(2)} bits/s</td></tr>`).join("");
+        try { localStorage.setItem(`helm-target-${run.who}-${run.cond}-${Date.now()}`, JSON.stringify(run.trials)); } catch {}
+        document.getElementById("done").classList.remove("hidden");
+        canvas.style.cursor = "default";
+        hud.textContent = "";
+        run.finished = true;
+      }
+
+      function download() {
+        const cols = Object.keys(run.trials[0] ?? { participant: "" });
+        const csv = [cols.join(",")].concat(run.trials.map((t) => cols.map((c) => t[c]).join(","))).join("\n") + "\n";
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+        a.download = `target_${run.who}_${run.cond}.csv`;
+        a.click();
+      }
+
+      // ---- input
+      document.getElementById("start").onclick = startRun;
+      document.getElementById("download").onclick = download;
+      document.getElementById("again").onclick = () => {
+        run = null;
+        document.getElementById("done").classList.add("hidden");
+        document.getElementById("setup").classList.remove("hidden");
+      };
+      addEventListener("mousemove", (e) => {
+        if (run && !run.finished && run.cond === "mouse") { cursor.x = e.clientX * devicePixelRatio; cursor.y = e.clientY * devicePixelRatio; }
+      });
+      canvas.addEventListener("mousedown", () => { if (run && !run.finished && run.cond === "mouse") select(); });
+
+      function readPad(dt) {
+        const pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean);
+        padInfo.textContent = pads.length ? pads[0].id : "No gamepad seen yet: press a button on it";
+        if (!pads.length || !run || run.finished || run.cond === "mouse") return;
+        const p = pads[0];
+        const dz = (v) => (Math.abs(v) < DEADZONE ? 0 : v);
+        const lx = dz(p.axes[0] ?? 0), ly = dz(p.axes[1] ?? 0);   // Gamepad API: +y is down
+        if (run.mode === "position") {
+          const reach = (DISTANCES[DISTANCES.length - 1] * S) / 2 + (WIDTHS[0] * S) / 2;
+          cursor.x = W / 2 + lx * reach;
+          cursor.y = H / 2 + ly * reach;
+        } else {
+          cursor.x = Math.min(W, Math.max(0, cursor.x + lx * RATE_SPEED * S * dt));
+          cursor.y = Math.min(H, Math.max(0, cursor.y + ly * RATE_SPEED * S * dt));
+        }
+        const a = !!(p.buttons[0] && p.buttons[0].pressed);
+        if (a && !prevA) select();
+        prevA = a;
+      }
+
+      // ---- draw
+      function draw() {
+        ctx.fillStyle = "#f6f4ef";
+        ctx.fillRect(0, 0, W, H);
+        if (!run || run.finished) return;
+        const block = run.blocks[run.bi];
+        const ts = targets(block);
+        const current = ORDER[run.k];
+        ts.forEach((t, i) => {
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, (block.w * S) / 2, 0, 2 * Math.PI);
+          ctx.fillStyle = i === current ? "#2457e6" : "#e4e0d8";
+          ctx.fill();
+        });
+        ctx.beginPath();
+        ctx.arc(cursor.x, cursor.y, 7 * devicePixelRatio, 0, 2 * Math.PI);
+        ctx.fillStyle = "#1c2026";
+        ctx.fill();
+        ctx.lineWidth = 2 * devicePixelRatio;
+        ctx.strokeStyle = "#fff";
+        ctx.stroke();
+        const label = block.practice ? "Practice" : `Block ${run.bi - (run.blocks[0].practice ? 1 : 0) + 1} of ${BLOCKS.length}`;
+        hud.textContent = `${label} · target ${Math.min(run.k + 1, N + 1)} of ${N + 1}` + (run.k === 0 ? " · select the blue circle to start" : "");
+      }
+
+      function loop(now) {
+        const dt = Math.min(0.05, (now - lastT) / 1000);
+        lastT = now;
+        readPad(dt);
+        draw();
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
     </script>
   </body>
 </html>

@@ -1,20 +1,52 @@
 <!-- OWNER: P3 -->
-<!-- Motion-to-screen latency test (docs/SPEC.md 12, eval 1). Bootstrap stub. -->
+<!-- Motion-to-screen latency test (docs/SPEC.md 12, eval 1). Open in Chrome or Edge on the demo laptop, full
+     screen (F11). The square turns white for as long as button A is down on any connected gamepad: Helm's
+     virtual pad, or a real controller for the baseline. Film face and screen together at 240 fps. -->
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <title>Helm latency test</title>
     <style>
-      body { margin: 0; background: #000; color: #888; font: 20px system-ui, sans-serif; }
-      #square { width: 60vmin; height: 60vmin; margin: 10vmin auto; background: #222; }
+      html, body { margin: 0; height: 100%; background: #000; color: #8a8f98; font: 20px system-ui, sans-serif; }
+      #square { position: absolute; left: 50%; top: 46%; width: 62vmin; height: 62vmin; transform: translate(-50%, -50%);
+                background: #1c1f24; border-radius: 4px; }
+      #square.down { background: #fff; }
+      #info { position: absolute; left: 0; right: 0; bottom: 3vh; text-align: center; line-height: 1.5; }
+      #pads { color: #c9ced6; }
+      #count { position: absolute; top: 2vh; right: 3vw; font-size: 28px; font-variant-numeric: tabular-nums; color: #c9ced6; }
     </style>
   </head>
   <body>
-    <div id="square"></div>
+    <div id="square" aria-label="Lights up while button A is pressed"></div>
+    <div id="count" title="Presses this session">0 presses</div>
+    <div id="info">
+      <div id="pads">No gamepad yet: press any button on it once so the browser can see it.</div>
+      <div>Square lights while <b>A</b> is down · film face and screen together at 240 fps · F11 for full screen</div>
+    </div>
     <script>
-      // TODO(P3): read navigator.getGamepads() every animation frame and turn #square white
-      // while button A (index 0) is down. Filmed at 240 fps beside the player's face.
+      // Reads the Gamepad API once per animation frame (the fastest a page can see a press) and paints the square
+      // in the same frame. Any connected pad counts, so Helm's virtual pad and a real controller both work.
+      const square = document.getElementById("square");
+      const pads = document.getElementById("pads");
+      const count = document.getElementById("count");
+      let wasDown = false;
+      let presses = 0;
+
+      function frame() {
+        const list = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean);
+        const down = list.some((p) => p.buttons[0] && p.buttons[0].pressed);
+        if (down !== wasDown) {
+          square.classList.toggle("down", down);
+          if (down) count.textContent = `${++presses} press${presses === 1 ? "" : "es"}`;
+          wasDown = down;
+        }
+        pads.textContent = list.length
+          ? list.map((p) => `Pad ${p.index}: ${p.id}`).join(" · ")
+          : "No gamepad yet: press any button on it once so the browser can see it.";
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
     </script>
   </body>
 </html>
