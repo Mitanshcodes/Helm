@@ -13,3 +13,4 @@ pytest
 # P1 appends the coach packages (deepagents and one model provider) when starting coach.py.
 deepagents
 langchain-anthropic
+httpx  # P4: FastAPI TestClient in tests/test_server.py
