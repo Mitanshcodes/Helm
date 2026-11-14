@@ -1476,3 +1476,186 @@ code {
 .setup-body .reasons {
   margin: 16px 0;
 }
+
+/* ---------------------------------------------------------------- mapping editor */
+
+.setup-body > .card.mapping-card,
+.setup-body > .card:has(.mapping-editor) {
+  max-width: none;
+}
+
+.map-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 40px;
+}
+
+@media (max-width: 980px) {
+  .map-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.map-section h3 {
+  margin: 18px 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.map-section h3:first-child {
+  margin-top: 0;
+}
+
+.map-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(0, 1.3fr) 130px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.map-row select {
+  min-height: 44px;
+  flex: none;
+  width: 100%;
+}
+
+.map-row.empty select:first-of-type {
+  color: var(--muted);
+}
+
+.map-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.map-target .badge {
+  min-width: 34px;
+  height: 34px;
+}
+
+.map-target-name {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.map-action {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-row .toggle.invert {
+  gap: 8px;
+  font-size: 16px;
+}
+
+.sensitivity {
+  margin-top: 24px;
+}
+
+.sliders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 6px 40px;
+  margin-top: 10px;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 12px;
+}
+
+.slider input[type="range"] {
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--accent);
+}
+
+.slider b {
+  text-align: right;
+}
+
+.map-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 14px 0 4px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+
+.map-footer .result {
+  margin-top: 0;
+}
+
+.json-edit {
+  margin-top: 20px;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- put a move on a button */
+
+.put-on {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.put-target {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.put-target:hover {
+  border-color: var(--text);
+}
+
+.put-target.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.move-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.move-name {
+  min-width: 140px;
+  font-weight: 700;
+}
+
+.teach-result .put-on {
+  margin-top: 14px;
+}

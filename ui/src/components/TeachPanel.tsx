@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { speak } from "../feedback";
 import { humanize } from "../format";
 import { READY_MS, type TeachFlow } from "../teach";
-import type { HelmState } from "../types";
+import type { HelmState, Mapping } from "../types";
+import { PutOnButton } from "./PutOnButton";
 
 const MIN_ACCURACY = 0.85; // below this, offer more takes (docs/SPEC.md 6.11)
 const R = 44;
@@ -33,6 +34,8 @@ interface Props {
   go: () => void;
   offer: () => void;
   close: () => void;
+  mapping: Mapping | null;
+  apply: (m: Mapping) => void;
 }
 
 function Intro({ state, hasFace, begin, close }: Props) {
@@ -143,7 +146,7 @@ function Ready({ flow, go, close, voice }: Props) {
   );
 }
 
-function Result({ flow, begin, offer, close }: Props) {
+function Result({ state, flow, begin, offer, close, mapping, apply }: Props) {
   const result = flow.result;
   const accuracy = result?.accuracy ?? null;
   const weak = accuracy !== null && accuracy < MIN_ACCURACY;
@@ -154,11 +157,12 @@ function Result({ flow, begin, offer, close }: Props) {
         <h2 className="teach-title">{humanize(flow.name)} learned</h2>
         <p className="teach-lead">
           {accuracy === null
-            ? "Helm has your move. Map it to a button in the coach or the mapping below."
+            ? "Helm has your move. Put it on a button:"
             : weak
               ? `Helm recognized it ${Math.round(accuracy * 100)}% of the time on tries it had not seen. A few more tries usually fix that, or try a more distinct movement.`
-              : `Helm recognized it ${Math.round(accuracy * 100)}% of the time on tries it had not seen. Map it to a button in the coach or the mapping below.`}
+              : `Helm recognized it ${Math.round(accuracy * 100)}% of the time on tries it had not seen. Put it on a button:`}
         </p>
+        {!weak && <PutOnButton gesture={flow.name} mapping={mapping} catalog={state.catalog} apply={apply} />}
       </div>
       <div className="teach-actions">
         {weak && (

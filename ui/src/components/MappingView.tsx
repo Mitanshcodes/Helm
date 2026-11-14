@@ -1,7 +1,8 @@
 // OWNER: P4
-// Read-only table of the current mapping (input, target, mode) and a JSON box with validation errors.
+// The mapping editor, a read-only table (used by the coach) and a raw JSON box for advanced edits.
 import { useEffect, useState } from "react";
-import type { Mapping, MappingStatus, Send } from "../types";
+import type { Catalog, Mapping, MappingStatus, Send } from "../types";
+import { MappingEditor } from "./MappingEditor";
 
 const label = (name: string) => name.replace(/_/g, " ");
 
@@ -35,8 +36,8 @@ export function MappingTable({ mapping }: { mapping: Mapping }) {
   );
 }
 
-export function MappingView(props: { mapping: Mapping | null; status: MappingStatus; apply: (m: Mapping) => void; send: Send }) {
-  const { mapping, status, apply, send } = props;
+export function MappingView(props: { mapping: Mapping | null; catalog?: Catalog; status: MappingStatus; apply: (m: Mapping) => void; send: Send }) {
+  const { mapping, catalog, status, apply, send } = props;
   const [text, setText] = useState("");
   const [parseError, setParseError] = useState<string | null>(null);
 
@@ -54,13 +55,16 @@ export function MappingView(props: { mapping: Mapping | null; status: MappingSta
       setParseError(e instanceof Error ? e.message : "Not valid JSON");
     }
   };
-  const errors = parseError ? [parseError] : status.errors;
 
   return (
     <section className="card">
       <h2>Mapping</h2>
-      {mapping ? <MappingTable mapping={mapping} /> : <p className="muted">Build a mapping with the coach, or paste one below.</p>}
-      <details>
+      {mapping ? (
+        <MappingEditor mapping={mapping} catalog={catalog} status={status} apply={apply} send={send} />
+      ) : (
+        <p className="muted">Build a mapping with the coach, or paste one below.</p>
+      )}
+      <details className="json-edit">
         <summary>Edit as JSON</summary>
         <textarea value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} rows={10} aria-label="Mapping JSON" />
         <div className="line">
@@ -70,11 +74,7 @@ export function MappingView(props: { mapping: Mapping | null; status: MappingSta
           <button className="btn" onClick={() => send({ cmd: "save_profile" })}>Save profile</button>
           {status.applied && !parseError && <span className="result">Applied</span>}
         </div>
-        {errors.map((e) => (
-          <p key={e} className="notice">
-            {e}
-          </p>
-        ))}
+        {parseError && <p className="notice">{parseError}</p>}
       </details>
     </section>
   );

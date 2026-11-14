@@ -51,6 +51,11 @@ FIRED_HOLD_MS = 150                # a fire stays in the state message this long
 COACH_TIMEOUT_S = 60
 COACH_DEFAULT_MODEL = "anthropic:claude-opus-5-5"   # overridden by the HELM_COACH_MODEL environment variable
 COACH_OPENAI_MODEL = "openai:gpt-5.5"              # used instead when only OPENAI_API_KEY is set (e.g. in .env)
+COACH_BACKEND = "auto"             # "claude" (Claude Code CLI on the user's subscription), "api", "offline", or "auto":
+                                   # Claude Code when installed, else an API key. HELM_COACH_BACKEND overrides it.
+COACH_CLAUDE_MODEL = "sonnet"      # Claude Code model alias ("sonnet", "opus"); HELM_COACH_CLAUDE_MODEL overrides it
+COACH_CLAUDE_TIMEOUT_S = 180       # whole Claude Code run, web lookups and fix-up rounds included
+COACH_CLAUDE_ATTEMPTS = 3          # rounds of "here are the check errors, fix them" before the offline coach
 COACH_RECURSION_LIMIT = 60         # agent graph steps before it gives up
 COACH_THRESHOLD_STEP = 0.05        # offline review: how far one change moves on/off
 COACH_MIN_NEAR_MISSES = 3          # offline review: near-misses before a threshold is lowered

@@ -12,7 +12,12 @@ import copy
 import json
 import logging
 import os
+import shutil
+import subprocess
+import sys
+import tempfile
 import threading
+import time
 from pathlib import Path
 
 from helm import config, profiles
@@ -64,9 +69,20 @@ soft_sip, hard_sip, soft_puff, hard_puff and needs a breath sensor. Keep the pau
 
 # ------------------------------------------------------------------ data the tools expose
 
+_games_cache: dict | None = None
+
+
+def _games() -> dict:
+    """games.json, read once (the pipeline thread builds the editor catalog from it and must not touch disk)."""
+    global _games_cache
+    if _games_cache is None:
+        _games_cache = json.loads(_GAMES_PATH.read_text())
+    return _games_cache
+
+
 def game_controls(game: str) -> dict:
     """The game's entry in games.json, or an error dict listing the known games."""
-    games = json.loads(_GAMES_PATH.read_text())
+    games = _games()
     if game in games:
         return games[game]
     lower = {g.lower(): g for g in games}
@@ -295,6 +311,26 @@ def _candidates(calib: Calibration, learned: list[str], has_breath: bool) -> lis
     return out
 
 
+def gesture_catalog(calib: Calibration, learned: list[str], has_breath: bool, game: str) -> dict:
+    """Everything the dashboard's mapping editor can put on a control: each gesture with the definition to
+    insert, plain words, and whether this player can use it; plus the game's action name per pad target."""
+    usable = usable_expressions(calib)
+    gestures = [{"name": n, "label": w[0].upper() + w[1:], "group": "face",
+                 "definition": expression_gesture(srcs, on, off), "usable": set(srcs) <= usable}
+                for n, srcs, on, off, w in _EXPRESSIONS]
+    gestures.append({"name": "eyes_closed", "label": "Close both eyes", "group": "face", "usable": True,
+                     "definition": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"],
+                                    "combine": "min", "on": config.PAUSE_ON, "off": config.PAUSE_OFF}})
+    gestures += [{"name": n, "label": n.replace("_", " ").capitalize(), "group": "learned", "usable": True,
+                  "definition": {"kind": "learned", "on": 0.7, "off": 0.5}} for n in learned]
+    if has_breath:
+        gestures += [{"name": n, "label": n.replace("_", " ").capitalize(), "group": "breath", "usable": True,
+                      "definition": {"kind": "breath"}} for n in BREATH_EVENTS]
+    controls = {a["target"]: a["name"] for a in game_controls(game).get("actions", [])
+                if isinstance(a, dict) and "target" in a}
+    return {"gestures": gestures, "controls": controls}
+
+
 def _used(m: dict) -> tuple[set[str], set[str]]:
     """Gesture names that drive something, and the blendshapes behind them."""
     gestures = m.get("gestures") if isinstance(m.get("gestures"), dict) else {}
@@ -505,12 +541,144 @@ def _has_credentials(model: str) -> bool:
     return keys is None or any(os.environ.get(k) for k in keys)   # unknown providers: let the agent try
 
 
+# ------------------------------------------------------------------ Claude Code (the user's subscription)
+
+_CLAUDE_SYSTEM = """You are Helm's coach. Helm turns a player's face (head pose, expressions, learned personal \
+gestures) and optionally breath into a virtual Xbox 360 controller. Give this player the best mapping for this game.
+
+1. Controls first. If the message includes the game's controls, use them. If it does not, search the web for the \
+game's default Xbox controller layout and work out which actions matter most (held all the time, frequent, \
+rare). List the actions you used in `controls` as "target: action", e.g. "A: jump".
+2. Plan. Steering or the main movement axis goes to head turning (yaw). The most frequent, time-critical actions \
+go to the player's strongest gestures; rare ones to weaker gestures. Map all four face buttons A, B, X and Y, each \
+to a different gesture from usable_gestures (strongest first). Use only gestures from usable_gestures, with the \
+definition given there. An action held almost all the time (accelerate, run) is better as "auto": {"rt": 1.0} \
+than a held face. Use mode "hold" for held actions, "tap" for tapped ones, "toggle" for on/off ones. Keep the \
+pause gesture as eyes closed held 2000 ms.
+3. For a session review, change as little as possible: lower `on`/`off` by 0.05 for near-misses, raise them for \
+gestures that fire far too often, and fill any empty face button.
+
+Return the complete mapping as structured output, with one reason per decision in `reasons`, each a single \
+plain sentence of at most 15 words that a player reads (e.g. "Brow raise fires items: your strongest, quickest \
+move."). Helm checks the mapping; if it has errors you will get them back and must return a corrected complete \
+mapping.
+
+Pad targets are case-sensitive and exactly: buttons """ + ", ".join(PAD_BUTTONS) + """; triggers lt, rt; \
+stick axes lx, ly, rx, ry.
+
+""" + SYSTEM_PROMPT[SYSTEM_PROMPT.index("Mapping format (JSON):"):]
+
+_CLAUDE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "controls": {"type": "array", "items": {"type": "string"}},
+        "mapping": {"type": "object"},
+        "reasons": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["mapping", "reasons"],
+}
+
+
+def _backend() -> str:
+    _load_env()
+    choice = (os.environ.get("HELM_COACH_BACKEND") or config.COACH_BACKEND).lower()
+    if choice == "auto":
+        return "claude" if _claude_cli() else "api"
+    return choice
+
+
+def _claude_cli() -> str | None:
+    """The Claude Code executable (claude, or claude.cmd on Windows), if installed."""
+    return shutil.which("claude")
+
+
+def _claude_context(session: _Session, task: str) -> str:
+    controls = game_controls(session.game)
+    known = "error" not in controls
+    lines = [task, ""]
+    if known:
+        lines.append(f"The game's controls (Helm's table for {session.game}):")
+        lines.append(json.dumps(controls, indent=1))
+    else:
+        lines.append(f"Helm has no control table for {session.game!r}. Search the web for its default Xbox "
+                     "controller layout first.")
+    lines += ["", "The player:", json.dumps(player_report(session.calib, session.learned, session.has_breath,
+                                                          session.stats), indent=1)]
+    return "\n".join(lines)
+
+
+def _run_claude(session: _Session, task: str) -> tuple[dict, list[str]] | None:
+    """Ask Claude Code (logged in with the user's Claude subscription) for a mapping; check it and send the
+    errors back until it passes. Returns (mapping, reasons) or None, with session.offline_reason set."""
+    exe = _claude_cli()
+    if not exe:
+        session.offline_reason = "Claude Code is not installed (install it and run `claude` once to log in)"
+        return None
+    model = os.environ.get("HELM_COACH_CLAUDE_MODEL", config.COACH_CLAUDE_MODEL)
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    cmd = [exe, "-p", "--output-format", "json", "--model", model, "--no-session-persistence",
+           "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch",
+           "--system-prompt", _CLAUDE_SYSTEM, "--json-schema", json.dumps(_CLAUDE_SCHEMA)]
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    base = _claude_context(session, task)
+    prompt = base
+    deadline = time.monotonic() + config.COACH_CLAUDE_TIMEOUT_S
+    for _ in range(config.COACH_CLAUDE_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining < 5:
+            break
+        try:
+            proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8",
+                                  timeout=remaining, env=env, cwd=tempfile.gettempdir(), creationflags=flags)
+        except subprocess.TimeoutExpired:
+            session.offline_reason = f"Claude took longer than {config.COACH_CLAUDE_TIMEOUT_S} s"
+            return None
+        try:
+            data = json.loads(proc.stdout or "{}")
+        except ValueError:
+            data = {}
+        out = data.get("structured_output") if isinstance(data, dict) else None
+        if data.get("is_error") or not isinstance(out, dict) or not isinstance(out.get("mapping"), dict):
+            text = f"{data.get('result') or ''} {proc.stderr or ''}".strip()
+            log.warning("coach: Claude Code failed (exit %s): %s", proc.returncode, text[:300])
+            session.offline_reason = ("Claude Code is not logged in (run `claude` once and log in)"
+                                      if "login" in text.lower() or "log in" in text.lower()
+                                      else f"Claude Code failed: {_short_reason(text) or 'no answer'}")
+            return None
+        mapping = out["mapping"]
+        mapping["player"], mapping["game"] = session.calib.player, session.game
+        reasons = [str(r) for r in out.get("reasons") or []]
+        controls = [str(c) for c in out.get("controls") or []]
+        errors = check(mapping, session.calib, session.learned, session.has_breath)
+        if not errors:
+            if controls and "error" in game_controls(session.game):
+                reasons.insert(0, "Controls found: " + "; ".join(controls))
+            return mapping, reasons
+        log.info("coach: Claude's mapping had %d errors, asking for a fix", len(errors))
+        prompt = (base + "\n\nYour previous mapping:\n" + json.dumps(mapping) + "\n\nHelm rejected it. Fix every "
+                  "one of these errors and return the complete corrected mapping:\n- " + "\n- ".join(errors))
+    session.offline_reason = session.offline_reason or "Claude's mapping still had errors after several tries"
+    return None
+
+
+def _ask(session: _Session, task: str) -> tuple[dict, list[str]] | None:
+    """Claude Code on the subscription when available (or chosen), else the API agent; None means offline."""
+    backend = _backend()
+    if backend == "offline":
+        session.offline_reason = "the coach is set to offline"
+        return None
+    if backend == "claude":
+        return _run_claude(session, task)
+    return _run_agent(session, task)
+
+
 def _run_agent(session: _Session, task: str) -> tuple[dict, list[str]] | None:
     """Run the deep agent with a time limit. Returns (mapping, reasons) or None on any failure."""
     model = _model_name()
     if not _has_credentials(model):
         log.info("coach: no API key for %s, using the offline path", model)
-        session.offline_reason = "no API key (set OPENAI_API_KEY or ANTHROPIC_API_KEY in .env)"
+        session.offline_reason = ("Claude Code is not installed and no API key is set (install Claude Code and run "
+                                  "`claude` once to log in)")
         return None
     outcome: dict = {}
 
@@ -567,7 +735,7 @@ def build_mapping(game: str, calib: Calibration, learned: list[str], has_breath:
     task = (f"Build the best mapping for player {calib.player!r} playing {game!r}. "
             "Read the controls and the player report, plan, check, fix, and submit.")
     try:
-        result = _run_agent(session, task)
+        result = _ask(session, task)
     except Exception as e:
         log.warning("coach: %s, using the offline path", e)
         session.offline_reason = _short_reason(f"{type(e).__name__}: {e}")
@@ -586,7 +754,7 @@ def review_session(mapping: dict, stats: dict, calib: Calibration, learned: list
     task = ("Review this session and improve the current mapping with the smallest set of changes. "
             f"Current mapping: {json.dumps(mapping)}")
     try:
-        result = _run_agent(session, task)
+        result = _ask(session, task)
     except Exception as e:
         log.warning("coach: %s, using the offline path", e)
         session.offline_reason = _short_reason(f"{type(e).__name__}: {e}")

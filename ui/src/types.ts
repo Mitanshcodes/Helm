@@ -45,6 +45,20 @@ export interface HelmState {
   notices: string[];
   mapping?: Mapping;
   expressions?: Record<string, number>; // raw blendshape scores for a watch list (asked of P1); shown when present
+  catalog?: Catalog; // what the mapping editor can put on a control
+}
+
+export interface CatalogGesture {
+  name: string;
+  label: string;
+  group: "face" | "learned" | "breath";
+  definition: { kind: string; sources?: string[]; combine?: string; on?: number; off?: number };
+  usable: boolean; // false: this player's calibration says the expression is weak
+}
+
+export interface Catalog {
+  gestures: CatalogGesture[];
+  controls: Record<string, string>; // pad target -> the game's action name, e.g. A -> "fire item"
 }
 
 export interface FrameMsg {

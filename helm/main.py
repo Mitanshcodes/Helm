@@ -29,6 +29,9 @@ log = logging.getLogger("helm")
 
 _BLEND_INDEX = {name: i for i, name in enumerate(BLENDSHAPE_NAMES)}
 
+coach._games()                                     # read games.json now, not later on the pipeline thread
+
+
 def _load_model(player: str) -> GestureModel | None:
     path = profiles.gesture_model_path(player)
     return GestureModel.load(path) if os.path.exists(path) else None
@@ -462,6 +465,16 @@ class Runtime:
         self._thresholds = {name: {"on": g["on"], "off": g["off"]}
                             for name, g in defs.items() if "on" in g and "off" in g}
         self._tracked = {b["gesture"] for b in self._mapping.get("buttons", []) if "gesture" in b}
+        self._catalog_key = None                   # the editor's gesture list is rebuilt on the next snapshot
+
+    def _gesture_catalog(self) -> dict:
+        """What the mapping editor can use. Cached: rebuilt only when calibration, moves, game or breath change."""
+        key = (id(self._calib), tuple(self._learned()), self._sip.connected, self.game)
+        if key != self._catalog_key:
+            calib = self._calib or default_calibration(self.player)
+            self._catalog = coach.gesture_catalog(calib, self._learned(), self._sip.connected, self.game)
+            self._catalog_key = key
+        return self._catalog
 
     def _hold_fired(self, fired: tuple[str, ...], now_ns: int) -> list[str]:
         """Keep each fire for FIRED_HOLD_MS: a fire lasts one tick, but the dashboard samples states at 30 Hz."""
@@ -504,6 +517,7 @@ class Runtime:
             "notices": self._fatigue.notices(),
             "mapping": self._mapping,
             "expressions": {n: float(f.blend[_BLEND_INDEX[n]]) if f and f.face else 0.0 for n in config.WATCH_EXPRESSIONS},
+            "catalog": self._gesture_catalog(),
         }
 
 

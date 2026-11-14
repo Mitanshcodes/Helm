@@ -12,7 +12,9 @@ from helm.calibration import default_calibration
 def offline(monkeypatch):
     """Tests never reach the network: no key means the offline path."""
     monkeypatch.setattr(coach, "_env_loaded", True)               # never read the real .env
-    for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "HELM_COACH_MODEL", "OPENAI_API_KEY"):
+    monkeypatch.setattr(coach, "_claude_cli", lambda: None)       # never launch the real Claude Code
+    for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "HELM_COACH_MODEL", "OPENAI_API_KEY",
+                "HELM_COACH_BACKEND", "HELM_COACH_CLAUDE_MODEL"):
         monkeypatch.delenv(key, raising=False)
 
 
@@ -229,3 +231,61 @@ def test_player_report_lists_usable_gestures_for_the_agent():
     report = coach.player_report(default_calibration("guest", mode="quick"), ["left_smirk"], False)
     names = [g["name"] for g in report["usable_gestures"]]
     assert names[0] == "left_smirk" and {"brow_raise", "smile", "jaw_open", "pucker"} <= set(names)
+
+
+class FakeClaude:
+    """Stands in for subprocess.run of `claude -p`: replays scripted structured outputs, records the prompts."""
+
+    def __init__(self, outputs):
+        self.outputs, self.prompts, self.cmds, self.envs = list(outputs), [], [], []
+
+    def __call__(self, cmd, input, env, **kwargs):
+        import subprocess
+        self.cmds.append(cmd)
+        self.prompts.append(input)
+        self.envs.append(env)
+        out = self.outputs.pop(0)
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(out), stderr="")
+
+
+def test_claude_code_on_the_subscription_fixes_its_errors(monkeypatch):
+    calib = default_calibration("sam", mode="quick")
+    good = coach.offline_mapping("SuperTuxKart", calib, [], False)
+    bad = json.loads(json.dumps(good))
+    bad["buttons"] = [b for b in bad["buttons"] if b["target"] != "Y"]            # leaves a face button empty
+    fake = FakeClaude([
+        {"is_error": False, "structured_output": {"mapping": bad, "reasons": ["first try"]}},
+        {"is_error": False, "structured_output": {"mapping": good, "reasons": ["brow fires items"]}},
+    ])
+    monkeypatch.setattr(coach, "_claude_cli", lambda: "/usr/local/bin/claude")
+    monkeypatch.setattr(coach.subprocess, "run", fake)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-not-be-used")
+    result = coach.build_mapping("SuperTuxKart", calib, [], False)
+    assert result["rationale"] == ["brow fires items"] and coach.check(result["mapping"], calib, [], False) == []
+    assert len(fake.prompts) == 2 and "face buttons Y are unmapped" in fake.prompts[1]
+    assert "fire item" in fake.prompts[0] and "usable_gestures" in fake.prompts[0]
+    assert all("ANTHROPIC_API_KEY" not in env for env in fake.envs)              # the login, never the key
+    cmd = fake.cmds[0]
+    assert cmd[cmd.index("--tools") + 1] == "WebSearch,WebFetch" and "--json-schema" in cmd
+
+
+def test_unknown_game_asks_claude_to_look_up_the_controls(monkeypatch):
+    calib = default_calibration("sam", mode="quick")
+    mapping = coach.offline_mapping("NoSuchGame", calib, [], False)
+    fake = FakeClaude([{"is_error": False, "structured_output": {
+        "mapping": mapping, "reasons": ["jump on brow"], "controls": ["A: jump", "X: dash"]}}])
+    monkeypatch.setattr(coach, "_claude_cli", lambda: "claude")
+    monkeypatch.setattr(coach.subprocess, "run", fake)
+    result = coach.build_mapping("NoSuchGame", calib, [], False)
+    assert "Search the web" in fake.prompts[0]
+    assert result["rationale"] == ["Controls found: A: jump; X: dash", "jump on brow"]
+
+
+def test_claude_not_logged_in_falls_back_offline(monkeypatch):
+    fake = FakeClaude([{"is_error": True, "result": "Not logged in · Please run /login"}])
+    monkeypatch.setattr(coach, "_claude_cli", lambda: "claude")
+    monkeypatch.setattr(coach.subprocess, "run", fake)
+    calib = default_calibration("sam", mode="quick")
+    result = coach.build_mapping("SuperTuxKart", calib, [], False)
+    assert result["rationale"][0].startswith("Offline coach") and "not logged in" in result["rationale"][-1]
+    assert coach.check(result["mapping"], calib, [], False) == []

@@ -188,6 +188,8 @@ export default function App() {
               go={teach.go}
               offer={teach.offer}
               close={teach.close}
+              mapping={mapping}
+              apply={applyMapping}
             />
           )
         )}
@@ -209,7 +211,7 @@ export default function App() {
             tab={tab}
             setTab={setTab}
             tabs={[
-              { id: "mapping", label: "Mapping", body: <MappingView mapping={mapping} status={mappingStatus} apply={applyMapping} send={send} /> },
+              { id: "mapping", label: "Mapping", body: <MappingView mapping={mapping} catalog={state.catalog} status={mappingStatus} apply={applyMapping} send={send} /> },
               {
                 id: "coach",
                 label: "Coach",
@@ -220,7 +222,7 @@ export default function App() {
                 id: "moves",
                 label: "Your moves",
                 badge: state.gestures.learned.length ? String(state.gestures.learned.length) : undefined,
-                body: <GestureRecorder state={state} send={send} busy={state.progress !== null || teach.flow !== null} onTeach={teach.offer} />,
+                body: <GestureRecorder state={state} send={send} busy={state.progress !== null || teach.flow !== null} onTeach={teach.offer} mapping={mapping} apply={applyMapping} />,
               },
               {
                 id: "profile",
