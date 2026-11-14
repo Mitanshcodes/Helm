@@ -23,3 +23,9 @@ profiles/guest/
 *.npz
 !profiles/**/*.npz
 !eval/results/**/*.npz
+
+# personal working notes (P2): context for Claude and Codex, not for teammates
+context.md
+architecture.md
+decisions.md
+HARDWARE_PLAN.md
