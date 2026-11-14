@@ -9,13 +9,14 @@ import { JUDGE, ProfileCard } from "./components/ProfileCard";
 import { useTeachFlow } from "./teach";
 import { CameraView } from "./components/CameraView";
 import { CoachPanel } from "./components/CoachPanel";
-import { SipPuffCard, StatTiles, StickCard, ThrottleCard } from "./components/Controls";
+import { OutputCard, SipPuffCard, StatTiles } from "./components/Controls";
 import { Gauges } from "./components/Gauges";
 import { GestureRecorder } from "./components/GestureRecorder";
 import { MappingView } from "./components/MappingView";
 import { StatusBanner, StatusBar } from "./components/StatusBar";
 import { Wizard } from "./components/Wizard";
 import { TeachPanel } from "./components/TeachPanel";
+import { SetupTabs, useSetupTab } from "./components/SetupTabs";
 
 const params = new URLSearchParams(location.search);
 const OVERLAY = params.has("overlay");
@@ -41,6 +42,7 @@ export default function App() {
   const refreshProfiles = useCallback(() => void fetchProfiles().then(setProfiles), []);
   const teachRef = useRef<ReturnType<typeof useTeachFlow> | null>(null);
   const playerRef = useRef("guest");
+  const [tab, setTab] = useSetupTab();
 
   const onEvent = useCallback((msg: EventMsg) => {
     const data = msg.data;
@@ -53,6 +55,7 @@ export default function App() {
     if (msg.name === "coach_result") {
       setCoach(data as unknown as CoachResult);
       setCoachBusy(false);
+      setTab("coach"); // show the proposal where it can be accepted
     } else if (msg.name === "profile_loaded") {
       if (visitorPending.current && data.player === JUDGE) {
         visitorPending.current = false;
@@ -71,7 +74,7 @@ export default function App() {
         setToast(message);
       }
     }
-  }, []);
+  }, [setTab]);
 
   const { state, frame, connection, send: rawSend } = useHelmSocket(onEvent);
 
@@ -188,35 +191,54 @@ export default function App() {
             />
           )
         )}
-        <div className="columns">
-          <div className="col left">
+        <div className="dash">
+          <div className="dash-camera">
             <CameraView frame={frame} state={state} compact={OVERLAY} />
             {!OVERLAY && <StatTiles state={state} />}
           </div>
-          <div className="col right">
+          <div className="dash-face">
             <Gauges state={state} mapping={mapping} />
-            <div className="pair">
-              <StickCard state={state} mapping={mapping} />
-              <ThrottleCard state={state} mapping={mapping} />
-            </div>
+          </div>
+          <div className="dash-output">
+            <OutputCard state={state} mapping={mapping} />
             <SipPuffCard state={state} mapping={mapping} />
           </div>
         </div>
         {!OVERLAY && (
-          <div className="tools">
-            <GestureRecorder state={state} send={send} busy={state.progress !== null || teach.flow !== null} onTeach={teach.offer} />
-            <MappingView mapping={mapping} status={mappingStatus} apply={applyMapping} send={send} />
-            <CoachPanel state={state} send={send} result={coach} busy={coachBusy} apply={applyMapping} />
-            <ProfileCard
-              state={state}
-              send={send}
-              profiles={profiles}
-              voice={voice}
-              setVoice={setVoice}
-              clicks={clicks}
-              setClicks={setClicks}
-            />
-          </div>
+          <SetupTabs
+            tab={tab}
+            setTab={setTab}
+            tabs={[
+              { id: "mapping", label: "Mapping", body: <MappingView mapping={mapping} status={mappingStatus} apply={applyMapping} send={send} /> },
+              {
+                id: "coach",
+                label: "Coach",
+                badge: coachBusy ? "working" : coach ? "new" : undefined,
+                body: <CoachPanel state={state} send={send} result={coach} busy={coachBusy} apply={applyMapping} />,
+              },
+              {
+                id: "moves",
+                label: "Your moves",
+                badge: state.gestures.learned.length ? String(state.gestures.learned.length) : undefined,
+                body: <GestureRecorder state={state} send={send} busy={state.progress !== null || teach.flow !== null} onTeach={teach.offer} />,
+              },
+              {
+                id: "profile",
+                label: "Profile & sound",
+                body: (
+                  <ProfileCard
+                    state={state}
+                    send={send}
+                    profiles={profiles}
+                    voice={voice}
+                    setVoice={setVoice}
+                    clicks={clicks}
+                    setClicks={setClicks}
+                  />
+                ),
+              },
+            ]}
+          />
         )}
       </main>
       {offline && lost}

@@ -35,7 +35,7 @@ function InfoIcon() {
 }
 
 function suffix(mode: string | undefined, learned: boolean, holdMs: number | undefined): string | null {
-  if (mode === "pause") return `hold ${(holdMs ?? 1000) / 1000} s to pause`;
+  if (mode === "pause") return `hold ${(holdMs ?? 2000) / 1000} s to pause or resume`;
   const parts = [mode === "hold" ? "hold" : mode === "toggle" ? "on / off" : null, learned ? "learned from your takes" : null];
   return parts.filter(Boolean).join(" · ") || null;
 }
@@ -61,16 +61,18 @@ function WatchRow({ label, level, check }: { label: string; level: number; check
   return (
     <li className="gesture watch">
       <div className="gesture-top">
-        <span className="gesture-name">{label}</span>
-        <span className="gesture-right">
+        <span className="gesture-name">
+          {label}
           <span className={`mini-pill ${check.tone}`}>{check.text}</span>
-          <span className="score">{level.toFixed(2)}</span>
         </span>
       </div>
-      <div className="meter" role="img" aria-label={`${label} raw score ${level.toFixed(2)}`}>
-        <div className="meter-track">
-          <div className="meter-fill" style={{ width: `${clamp01(level) * 100}%` }} />
+      <div className="gesture-bottom">
+        <div className="meter" role="img" aria-label={`${label} raw score ${level.toFixed(2)}`}>
+          <div className="meter-track">
+            <div className="meter-fill" style={{ width: `${clamp01(level) * 100}%` }} />
+          </div>
         </div>
+        <span className="score">{level.toFixed(2)}</span>
       </div>
     </li>
   );
@@ -79,26 +81,26 @@ function WatchRow({ label, level, check }: { label: string; level: number; check
 function GestureRow({ name, level, firing, target, note, on, off }: RowProps) {
   const title = humanize(name);
   return (
-    <li className={firing ? "gesture firing" : "gesture"}>
+    <li className={`gesture${firing ? " firing" : ""}${target === "pause" ? " pause" : ""}`}>
       <div className="gesture-top">
         <span className={target ? "badge" : "badge none"} aria-label={target ? `Button ${target}` : "Not mapped"}>
           {target === "pause" ? <PauseIcon /> : (target ?? "–").toUpperCase()}
         </span>
         <span className="gesture-name">
           {title}
-          {note && <span className="suffix"> · {note}</span>}
+          {note && <span className="suffix">{note}</span>}
         </span>
-        <span className="gesture-right">
-          {firing && <span className="firing-pill">Firing</span>}
-          <span className="score">{level.toFixed(2)}</span>
-        </span>
+        {firing && <span className="firing-pill">Firing</span>}
       </div>
-      <div className="meter" role="img" aria-label={`${title} level ${level.toFixed(2)}${on !== undefined ? `, fires at ${on.toFixed(2)}` : ""}`}>
-        <div className="meter-track">
-          <div className="meter-fill" style={{ width: `${clamp01(level) * 100}%` }} />
+      <div className="gesture-bottom">
+        <div className="meter" role="img" aria-label={`${title} level ${level.toFixed(2)}${on !== undefined ? `, fires at ${on.toFixed(2)}` : ""}`}>
+          <div className="meter-track">
+            <div className="meter-fill" style={{ width: `${clamp01(level) * 100}%` }} />
+          </div>
+          {off !== undefined && <span className="tick off" style={{ left: `${clamp01(off) * 100}%` }} />}
+          {on !== undefined && <span className="tick on" style={{ left: `${clamp01(on) * 100}%` }} />}
         </div>
-        {off !== undefined && <span className="tick off" style={{ left: `${clamp01(off) * 100}%` }} />}
-        {on !== undefined && <span className="tick on" style={{ left: `${clamp01(on) * 100}%` }} />}
+        <span className="score">{level.toFixed(2)}</span>
       </div>
     </li>
   );
@@ -136,8 +138,10 @@ export function Gauges({ state, mapping }: { state: HelmState; mapping: Mapping 
   return (
     <section className="card">
       <div className="card-head">
-        <h2>Your gestures</h2>
-        <span className="hint">Dark tick fires · light tick releases</span>
+        <h2>Face controls</h2>
+        <span className="hint legend">
+          <i className="tick-key on" /> fires <i className="tick-key off" /> releases
+        </span>
       </div>
       {names.length === 0 && <p className="muted">No gestures are mapped yet. Build a mapping with the coach below.</p>}
       <ul className="gestures">

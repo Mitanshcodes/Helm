@@ -34,6 +34,7 @@ export function StatusBar(props: {
 }) {
   const { state, connection, send, mode, compact, onNextVisitor, onTeach } = props;
   const { tone, text } = status(state, connection);
+  const hold = holdSeconds(state);
   const who = [state.profile?.player, state.profile?.game].filter(Boolean).map((s, i) => (i === 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s));
   return (
     <header className="header">
@@ -49,21 +50,27 @@ export function StatusBar(props: {
         </span>
         {!compact && (
           <>
-            <button className="btn" disabled={state.progress !== null} onClick={() => send({ cmd: "calibrate", mode })}>
+            <span className="header-sep" aria-hidden="true" />
+            <button className="btn quiet" disabled={state.progress !== null} onClick={() => send({ cmd: "calibrate", mode })}>
               Recalibrate
             </button>
             {onTeach && (
-              <button className="btn" disabled={state.progress !== null} onClick={onTeach}>
+              <button className="btn quiet" disabled={state.progress !== null} onClick={onTeach}>
                 Teach a move
               </button>
             )}
             {onNextVisitor && (
-              <button className="btn" onClick={onNextVisitor} title="Load the judge profile and run a quick calibration">
+              <button className="btn quiet" onClick={onNextVisitor} title="Load the judge profile and run a quick calibration">
                 Next visitor
               </button>
             )}
-            <button className="btn primary" onClick={() => send({ cmd: "pause", on: !state.paused })}>
-              {state.paused ? "Resume" : "Pause · or close eyes 1 s"}
+            <button
+              className="btn primary"
+              onClick={() => send({ cmd: "pause", on: !state.paused })}
+              title={`Or keep your eyes closed for ${hold} s`}
+            >
+              {state.paused ? "Resume" : "Pause"}
+              <small>or eyes shut {hold} s</small>
             </button>
           </>
         )}
@@ -72,11 +79,17 @@ export function StatusBar(props: {
   );
 }
 
+/** The pause hold from the active mapping, in seconds (the backend default is 2 s). */
+function holdSeconds(state: HelmState): number {
+  return (state.mapping?.pause?.hold_ms ?? 2000) / 1000;
+}
+
 export function StatusBanner({ state }: { state: HelmState }) {
   if (!state.paused || state.progress) return null;
+  const hold = holdSeconds(state);
   return (
     <div className="banner" role="status">
-      Paused — close your eyes for 1 second to resume
+      Paused — keep your eyes closed for {hold} {hold === 1 ? "second" : "seconds"} to resume
     </div>
   );
 }

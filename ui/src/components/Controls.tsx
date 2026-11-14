@@ -1,8 +1,9 @@
 // OWNER: P4
-// What the virtual controller is doing: stick, throttle, breath chips, and the three performance tiles.
+// What the virtual controller is doing: the pad, steering and throttle bars, breath chips, performance stats.
 import { useRef } from "react";
 import { clamp01, humanize } from "../format";
 import type { HelmState, Mapping } from "../types";
+import { ControllerView } from "./ControllerView";
 
 const R = 70;
 const BREATH: [string, string][] = [
@@ -97,20 +98,82 @@ export function SipPuffCard({ state, mapping }: { state: HelmState; mapping: Map
 
 export function StatTiles({ state }: { state: HelmState }) {
   const tiles: [string, string, string][] = [
-    ["Frame rate", state.fps.toFixed(1), "fps"],
-    ["Software delay", state.latency_ms.total.toFixed(0), "ms"],
+    ["Frame rate", state.fps.toFixed(0), "fps"],
+    ["Total delay", state.latency_ms.total.toFixed(0), "ms"],
     ["Face tracking", state.latency_ms.vision.toFixed(1), "ms"],
   ];
   return (
-    <div className="tiles">
+    <dl className="stats" aria-label="Performance">
       {tiles.map(([name, value, unit]) => (
-        <section key={name} className="card tile">
-          <p className="tile-name">{name}</p>
-          <p className="tile-value">
+        <div key={name}>
+          <dt>{name}</dt>
+          <dd>
             {value} <span>{unit}</span>
-          </p>
-        </section>
+          </dd>
+        </div>
       ))}
+    </dl>
+  );
+}
+
+/** Steering as a bar that grows from the center: easier to read across a table than a stick dot. */
+function SteerBar({ lx, deadzone }: { lx: number; deadzone: number }) {
+  const v = Math.max(-1, Math.min(1, lx));
+  const side = Math.abs(v) < 0.01 ? "Centered" : `${Math.round(Math.abs(v) * 100)}% ${v < 0 ? "left" : "right"}`;
+  return (
+    <div className="out-row">
+      <div className="out-label">
+        <span>Steering</span>
+        <b>{side}</b>
+      </div>
+      <div className="steer" role="img" aria-label={`Steering ${side}`}>
+        <div className="steer-dead" style={{ left: `${50 - deadzone * 50}%`, width: `${deadzone * 100}%` }} />
+        <div className="steer-fill" style={v < 0 ? { right: "50%", width: `${-v * 50}%` } : { left: "50%", width: `${v * 50}%` }} />
+        <div className="steer-mid" />
+      </div>
     </div>
+  );
+}
+
+function TriggerBar({ label, caption, value }: { label: string; caption: string; value: number }) {
+  const pct = Math.round(clamp01(value) * 100);
+  return (
+    <div className="out-row">
+      <div className="out-label">
+        <span>
+          {label} <small>{caption}</small>
+        </span>
+        <b>{pct}%</b>
+      </div>
+      <div className="meter plain" role="img" aria-label={`${label} ${pct} percent`}>
+        <div className="meter-track">
+          <div className="meter-fill accent" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** What the virtual controller is doing right now: buttons on the pad, then steering, throttle and brake. */
+export function OutputCard({ state, mapping }: { state: HelmState; mapping: Mapping | null }) {
+  const { control } = state;
+  const deadzone = mapping?.axes?.find((a) => a.target === "lx")?.deadzone ?? 0.08;
+  const { caption } = throttleSource(mapping);
+  const braking = control.lt > 0.01 || (mapping?.triggers ?? []).some((t) => t.target === "lt");
+  return (
+    <section className="card output">
+      <div className="card-head">
+        <h2>Controller</h2>
+        <span className={control.buttons.length ? "pressed" : "hint"} aria-live="polite">
+          {control.buttons.length ? `Pressing ${control.buttons.join(" · ")}` : "No buttons pressed"}
+        </span>
+      </div>
+      <ControllerView control={control} />
+      <div className="out-rows">
+        <SteerBar lx={control.lx} deadzone={deadzone} />
+        <TriggerBar label="Throttle" caption={caption.replace(/^Right trigger( · )?/, "")} value={control.rt} />
+        {braking && <TriggerBar label="Brake" caption="" value={control.lt} />}
+      </div>
+    </section>
   );
 }

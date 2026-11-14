@@ -15,7 +15,7 @@ from helm import coach, config, profiles
 from helm.adapt import FatigueTracker
 from helm.calibration import Calibrator, default_calibration
 from helm.capture import Camera
-from helm.contracts import AXES, ControlState, FrameFeatures, Progress, Signals
+from helm.contracts import AXES, BLENDSHAPE_NAMES, ControlState, FrameFeatures, Progress, Signals
 from helm.filters import Normalizer
 from helm.gestures import GestureEngine, GestureModel, TakeRecorder
 from helm.mapping import Mapper
@@ -26,6 +26,8 @@ from helm.vision import FaceTracker
 
 log = logging.getLogger("helm")
 
+
+_BLEND_INDEX = {name: i for i, name in enumerate(BLENDSHAPE_NAMES)}
 
 def _load_model(player: str) -> GestureModel | None:
     path = profiles.gesture_model_path(player)
@@ -337,6 +339,7 @@ class Runtime:
                 notes = self._calibrator.notes
                 self._calibrator = None
                 self._normalizer.set_calibration(self._calib)
+                self._fatigue = FatigueTracker()   # levels are on a new scale: old baselines no longer compare
                 self._rebuild_gestures()
                 self._worker(profiles.save_calibration, self._calib)
                 self._event("calibration_done", {"mode": self._calib.mode, "reliable": list(self._calib.reliable),
@@ -500,6 +503,7 @@ class Runtime:
             "gestures": {"learned": self._learned(), "reliable": list(self._calib.reliable) if self._calib else []},
             "notices": self._fatigue.notices(),
             "mapping": self._mapping,
+            "expressions": {n: float(f.blend[_BLEND_INDEX[n]]) if f and f.face else 0.0 for n in config.WATCH_EXPRESSIONS},
         }
 
 

@@ -45,6 +45,8 @@ QUICK_ASSUMED_RELIABLE = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmil
 FACE_LOST_MS = 200                 # pad goes neutral after this long without a face
 STATS_WINDOW = 60                  # frames in the rolling fps and latency medians
 NEAR_MISS_RATIO = 0.8              # an attempt that reaches this share of `on` without firing is a near-miss
+WATCH_EXPRESSIONS = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight", "mouthPucker", "cheekPuff")
+                                   # raw scores in the state message, so the dashboard can show unmapped ones
 FIRED_HOLD_MS = 150                # a fire stays in the state message this long, so 30 Hz states never miss it
 COACH_TIMEOUT_S = 60
 COACH_DEFAULT_MODEL = "anthropic:claude-opus-5-5"   # overridden by the HELM_COACH_MODEL environment variable

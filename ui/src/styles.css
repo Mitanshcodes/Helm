@@ -36,9 +36,9 @@ ul {
 }
 
 .page {
-  max-width: 1360px;
+  max-width: 1520px;
   margin: 0 auto;
-  padding: 32px 40px 56px;
+  padding: 20px 32px 48px;
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -62,7 +62,12 @@ ul {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px 24px;
+  gap: 12px 24px;
+  padding: 10px 14px 10px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
 }
 
 .brand {
@@ -72,27 +77,29 @@ ul {
 }
 
 .wheel {
-  width: 44px;
-  height: 44px;
+  width: 34px;
+  height: 34px;
+  color: var(--accent);
 }
 
 .brand h1 {
-  font-size: 40px;
+  font-size: 30px;
   line-height: 1;
   letter-spacing: -0.01em;
 }
 
 .who {
   margin-left: 4px;
-  padding-left: 18px;
+  padding-left: 16px;
   border-left: 1px solid var(--border);
-  font-size: 22px;
-  line-height: 36px;
+  font-size: 19px;
+  line-height: 30px;
   color: var(--muted);
 }
 
 .header-actions .btn {
-  padding: 0 20px;
+  min-height: 46px;
+  padding: 0 18px;
 }
 
 .header-actions {
@@ -100,15 +107,35 @@ ul {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+
+.header-sep {
+  width: 1px;
+  height: 30px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.btn.quiet {
+  border-width: 1px;
+  border-color: var(--border);
+}
+
+.btn small {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.1;
+  opacity: 0.85;
 }
 
 .pill {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-height: 44px;
-  padding: 0 20px;
+  min-height: 40px;
+  padding: 0 16px;
   border-radius: 999px;
   font-weight: 700;
 }
@@ -248,7 +275,7 @@ textarea {
 
 .card {
   min-width: 0;
-  padding: var(--pad);
+  padding: 22px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--card);
@@ -256,12 +283,12 @@ textarea {
 }
 
 .card h2 {
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1.2;
 }
 
 .card h3 {
-  font-size: 22px;
+  font-size: 19px;
   line-height: 1.2;
 }
 
@@ -271,7 +298,7 @@ textarea {
   align-items: baseline;
   justify-content: space-between;
   gap: 4px 16px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .state {
@@ -286,26 +313,48 @@ textarea {
   color: var(--warn);
 }
 
-.columns {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--gap);
+/* Live view: camera | face controls | controller. Two columns on a laptop, one on a narrow window. */
+.dash {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 0.85fr);
+  grid-template-areas: "camera face output";
+  align-items: start;
+  gap: 20px;
 }
 
-.col {
+.dash-camera,
+.dash-face,
+.dash-output {
   display: flex;
   flex-direction: column;
-  gap: var(--gap);
+  gap: 20px;
   min-width: 0;
 }
 
-.col.left {
-  flex: 1 1 560px;
+.dash-camera {
+  grid-area: camera;
 }
 
-.col.right {
-  flex: 1 1 520px;
+.dash-face {
+  grid-area: face;
+}
+
+.dash-output {
+  grid-area: output;
+}
+
+@media (max-width: 1280px) {
+  .dash {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "camera face" "output face";
+  }
+}
+
+@media (max-width: 860px) {
+  .dash {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "camera" "face" "output";
+  }
 }
 
 .banner {
@@ -362,68 +411,97 @@ textarea {
 .readouts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 20px;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 .readouts dt {
   color: var(--muted);
+  font-size: 16px;
 }
 
 .readouts dd {
-  font-size: 36px;
+  font-size: 28px;
   font-weight: 700;
   line-height: 1.2;
 }
 
-.tiles {
+/* fps and delay: one quiet strip under the camera */
+.stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--gap);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  background: var(--card);
 }
 
-.tile {
-  padding: 20px;
+.stats > div {
+  padding: 12px 18px;
 }
 
-.tile-name {
+.stats > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.stats dt {
   color: var(--muted);
+  font-size: 16px;
 }
 
-.tile-value {
-  font-size: 40px;
+.stats dd {
+  font-size: 26px;
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
 }
 
-.tile-value span {
-  font-size: 20px;
+.stats dd span {
+  font-size: 16px;
   color: var(--muted);
+  font-weight: 400;
 }
 
 /* ---------------------------------------------------------------- gestures */
 
+/* Each gesture is a small tile; two per row, pause across the bottom. */
 .gestures {
-  display: flex;
-  flex-direction: column;
-  gap: 26px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.gesture {
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  background: var(--bg);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.gesture.firing {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--card));
+}
+
+.gesture.pause {
+  grid-column: 1 / -1;
 }
 
 .gesture-top {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .badge {
   flex: none;
   display: grid;
   place-items: center;
-  min-width: 40px;
-  height: 40px;
-  padding: 0 10px;
-  border-radius: 20px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 18px;
   background: var(--text);
   color: #ffffff;
   font-weight: 700;
@@ -441,12 +519,14 @@ textarea {
 
 .gesture-name {
   min-width: 0;
-  font-size: 22px;
+  font-size: 19px;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .suffix {
-  font-size: 18px;
+  display: block;
+  font-size: 16px;
   font-weight: 400;
   color: var(--muted);
 }
@@ -455,7 +535,7 @@ textarea {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 
 .firing-pill {
@@ -470,20 +550,20 @@ textarea {
 .score {
   min-width: 2.6em;
   text-align: right;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
 }
 
 .meter {
   position: relative;
-  height: 18px;
-  margin-top: 16px;
+  height: 14px;
+  margin-top: 14px;
 }
 
 .meter-track {
   position: absolute;
   inset: 0;
-  border-radius: 9px;
+  border-radius: 7px;
   background: var(--track);
   overflow: hidden;
 }
@@ -638,13 +718,13 @@ textarea {
   align-items: baseline;
   justify-content: space-between;
   gap: 4px 16px;
-  margin: 28px 0 18px;
-  padding-top: 20px;
+  margin: 20px 0 14px;
+  padding-top: 16px;
   border-top: 1px solid var(--border);
 }
 
 .watch-head h3 {
-  font-size: 22px;
+  font-size: 19px;
 }
 
 .watch .gesture-name {
@@ -1169,4 +1249,230 @@ code {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* ---------------------------------------------------------------- face-controls legend */
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+}
+
+.tick-key {
+  display: inline-block;
+  width: 3px;
+  height: 16px;
+  margin-left: 8px;
+  border-radius: 2px;
+}
+
+.tick-key.on {
+  background: var(--text);
+}
+
+.tick-key.off {
+  background: var(--tick-off);
+}
+
+/* ---------------------------------------------------------------- controller output card */
+
+.output .controller-view {
+  max-width: 380px;
+  margin: 4px auto 0;
+}
+
+.output .card-head .pressed {
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.gesture-bottom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.gesture-bottom .meter {
+  flex: 1;
+  margin-top: 0;
+}
+
+.gesture-bottom .score {
+  min-width: 2.4em;
+}
+
+.gesture {
+  position: relative;
+}
+
+/* A tag on the tile's top edge, so "Firing" never squeezes the name */
+.gesture .firing-pill {
+  position: absolute;
+  top: -12px;
+  right: 14px;
+  padding: 0 10px;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.out-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.out-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.out-label small {
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.out-row .meter {
+  margin-top: 8px;
+}
+
+.steer {
+  position: relative;
+  height: 14px;
+  margin-top: 8px;
+  border-radius: 7px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.steer-dead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.steer-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+  transition: width 70ms linear;
+}
+
+.steer-mid {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+}
+
+/* ---------------------------------------------------------------- setup tabs */
+
+.setup {
+  padding: 0;
+  overflow: hidden;
+}
+
+.setup-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 28px;
+  padding: 14px 22px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.tab-badge {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.setup-body {
+  padding: 22px;
+}
+
+/* The tools inside a tab keep their markup; the tab provides the frame and the title. */
+.setup-body > .card {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  max-width: 900px;
+}
+
+.setup-body > .card > h2 {
+  display: none;
+}
+
+.setup-body .line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.setup-body table {
+  width: 100%;
+  max-width: 640px;
+}
+
+.watch .mini-pill {
+  display: table;
+  margin-top: 6px;
+}
+
+.setup-body table {
+  margin-top: 20px;
+}
+
+.setup-body .reasons {
+  margin: 16px 0;
 }
