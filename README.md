@@ -8,8 +8,8 @@ sensor add breath input.
 
 Built at HackPrinceton Fall '26 by a team of four.
 
-> Status: bootstrap. The repo tree, the shared contracts and a mock pipeline are in place. The
-> camera, the gamepad output, learned gestures and the dashboard are being built.
+> Status: in progress. The server and the dashboard run against the mock pipeline. The camera, the
+> gamepad output, calibration and learned gestures are being built.
 
 ## Setup
 
@@ -30,8 +30,12 @@ python -m helm --mock --output null   # no camera, no gamepad: works on any lapt
 python -m helm --record run.npz       # save face features while running
 python -m helm --replay run.npz       # replay a saved run instead of the camera
 
-cd ui && npm run dev                  # dashboard on http://localhost:5173
+cd ui && npm run dev                  # dashboard on http://localhost:5173 (needs python -m helm running)
+cd ui && npm run build                # after this, python -m helm serves the dashboard on http://localhost:8000
 ```
+
+Dashboard flags: `?mock=1` runs the dashboard on made-up data with no backend at all, `?quick=1` makes the automatic first calibration a quick one (for a judge), and
+`?overlay=1` is a compact view (camera, gauges, fired inputs) for a small window beside the game.
 
 Tests and the smoke run:
 
