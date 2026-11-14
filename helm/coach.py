@@ -1,8 +1,9 @@
 # OWNER: P1
 """Coach agent: build a mapping for this player and game, then review a session (docs/SPEC.md section 11).
 
-The agent runs on LangChain deepagents with the model named by HELM_COACH_MODEL (a provider:model string,
-default anthropic:claude-opus-5-5) plus that provider's API key. It sees a game name, gesture names and
+The agent runs on LangChain deepagents with the model named by HELM_COACH_MODEL (a provider:model string),
+or by default Claude when ANTHROPIC_API_KEY is set, else OpenAI when OPENAI_API_KEY is. Keys may live in the
+repo's gitignored .env. It sees a game name, gesture names and
 numbers, never images. With no key, no network, a failure or a timeout, both functions fall back to an
 offline path that needs nothing: the default mapping filtered to the player's reliable gestures, and a
 rule-based review. Both run on a worker thread (Runtime.coach_build / coach_review), never the pipeline.
@@ -275,6 +276,7 @@ class _Session:
         self.game, self.calib, self.learned, self.has_breath, self.stats = game, calib, learned, has_breath, stats
         self.submitted: tuple[dict, list[str]] | None = None
         self.closed = threading.Event()                # set on timeout: late submissions are ignored
+        self.offline_reason = ""                       # why the agent did not run or finish, for the dashboard
 
     def tools(self) -> list:
         session = self
@@ -317,8 +319,36 @@ class _Session:
         return [get_game_controls, get_player_report, check_mapping, submit_mapping]
 
 
+_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+_env_loaded = False
+
+
+def _load_env() -> None:
+    """Read KEY=value lines from the repo's .env (gitignored) once. Variables already set win."""
+    global _env_loaded
+    if _env_loaded:
+        return
+    _env_loaded = True
+    try:
+        lines = _ENV_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.removeprefix("export ").split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
 def _model_name() -> str:
-    return os.environ.get("HELM_COACH_MODEL", config.COACH_DEFAULT_MODEL)
+    """HELM_COACH_MODEL if set; otherwise Anthropic when its key is present, else OpenAI when its key is."""
+    _load_env()
+    if os.environ.get("HELM_COACH_MODEL"):
+        return os.environ["HELM_COACH_MODEL"]
+    if not _has_credentials(config.COACH_DEFAULT_MODEL) and os.environ.get("OPENAI_API_KEY"):
+        return config.COACH_OPENAI_MODEL
+    return config.COACH_DEFAULT_MODEL
 
 
 def _has_credentials(model: str) -> bool:
@@ -333,6 +363,7 @@ def _run_agent(session: _Session, task: str) -> tuple[dict, list[str]] | None:
     model = _model_name()
     if not _has_credentials(model):
         log.info("coach: no API key for %s, using the offline path", model)
+        session.offline_reason = "no API key (set OPENAI_API_KEY or ANTHROPIC_API_KEY in .env)"
         return None
     outcome: dict = {}
 
@@ -355,10 +386,30 @@ def _run_agent(session: _Session, task: str) -> tuple[dict, list[str]] | None:
     session.closed.set()
     if worker.is_alive():
         log.warning("coach: timed out after %s s, using the offline path", config.COACH_TIMEOUT_S)
+        session.offline_reason = f"{model} took longer than {config.COACH_TIMEOUT_S} s"
         return None
     if "error" in outcome:
         log.warning("coach: agent failed (%s), using the offline path", outcome["error"])
+        session.offline_reason = _short_reason(outcome["error"])
+    elif session.submitted is None:
+        session.offline_reason = f"{model} finished without submitting a valid mapping"
     return session.submitted
+
+
+def _short_reason(error: str) -> str:
+    """One readable line for the dashboard, e.g. the provider's "no credits" message."""
+    lower = error.lower()
+    if "credit" in lower or "quota" in lower or "billing" in lower:
+        return "the API account is out of credits"
+    if "401" in error or "authentication" in lower or "api key" in lower:
+        return "the API key was rejected"
+    if "connect" in lower or "timeout" in lower or "network" in lower:
+        return "no connection to the model"
+    return error.split("\n")[0][:120]
+
+
+def _offline_note(session: _Session) -> list[str]:
+    return [f"Coach offline: {session.offline_reason}"] if session.offline_reason else []
 
 
 # ------------------------------------------------------------------ public interface
@@ -372,10 +423,12 @@ def build_mapping(game: str, calib: Calibration, learned: list[str], has_breath:
         result = _run_agent(session, task)
     except Exception as e:
         log.warning("coach: %s, using the offline path", e)
+        session.offline_reason = _short_reason(f"{type(e).__name__}: {e}")
         result = None
     if result is not None:
         return {"mapping": result[0], "rationale": result[1]}
-    return {"mapping": offline_mapping(game, calib, learned, has_breath), "rationale": ["offline default"]}
+    return {"mapping": offline_mapping(game, calib, learned, has_breath),
+            "rationale": ["offline default", *_offline_note(session)]}
 
 
 def review_session(mapping: dict, stats: dict, calib: Calibration, learned: list[str], has_breath: bool) -> dict:
@@ -388,10 +441,12 @@ def review_session(mapping: dict, stats: dict, calib: Calibration, learned: list
         result = _run_agent(session, task)
     except Exception as e:
         log.warning("coach: %s, using the offline path", e)
+        session.offline_reason = _short_reason(f"{type(e).__name__}: {e}")
         result = None
     if result is not None:
         return {"mapping": result[0], "changes": result[1]}
     if check(mapping, calib, learned, has_breath):     # the current mapping no longer fits this player
         mapping = offline_mapping(game, calib, learned, has_breath)
     reviewed, changes = offline_review(mapping, stats, calib, learned, has_breath)
-    return {"mapping": reviewed, "changes": changes or ["offline review: no changes needed"]}
+    return {"mapping": reviewed,
+            "changes": (changes or ["offline review: no changes needed"]) + _offline_note(session)}

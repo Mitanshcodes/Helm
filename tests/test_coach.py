@@ -4,15 +4,38 @@ import json
 
 import pytest
 
-from helm import coach, profiles
+from helm import coach, config, profiles
 from helm.calibration import default_calibration
 
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
     """Tests never reach the network: no key means the offline path."""
-    for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "HELM_COACH_MODEL"):
+    monkeypatch.setattr(coach, "_env_loaded", True)               # never read the real .env
+    for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "HELM_COACH_MODEL", "OPENAI_API_KEY"):
         monkeypatch.delenv(key, raising=False)
+
+
+def test_model_choice_follows_the_keys(monkeypatch, tmp_path):
+    assert not coach._has_credentials(coach._model_name())                 # no key: offline path
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert coach._model_name() == config.COACH_OPENAI_MODEL
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    assert coach._model_name() == config.COACH_DEFAULT_MODEL               # Claude first when both are set
+    monkeypatch.setenv("HELM_COACH_MODEL", "openai:gpt-test")
+    assert coach._model_name() == "openai:gpt-test"
+
+
+def test_dotenv_is_read_once_and_does_not_override(monkeypatch, tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("# keys\nexport OPENAI_API_KEY='sk-from-file'\nHELM_COACH_MODEL=openai:gpt-file\n")
+    monkeypatch.setattr(coach, "_ENV_PATH", env)
+    monkeypatch.setattr(coach, "_env_loaded", False)
+    monkeypatch.setenv("HELM_COACH_MODEL", "openai:already-set")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert coach._model_name() == "openai:already-set"
+    import os
+    assert os.environ["OPENAI_API_KEY"] == "sk-from-file"
 
 
 def full_calib(reliable=("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight")):
@@ -24,7 +47,7 @@ def full_calib(reliable=("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmile
 def test_build_mapping_offline_is_valid():
     calib = default_calibration("guest")
     result = coach.build_mapping("SuperTuxKart", calib, learned=[], has_breath=False)
-    assert result["rationale"] == ["offline default"]
+    assert result["rationale"][0] == "offline default" and "no API key" in result["rationale"][1]
     assert profiles.validate_mapping(result["mapping"], calib, [], False) == []
     assert coach.check(result["mapping"], calib, [], False) == []
 
@@ -87,12 +110,19 @@ def test_agent_result_is_used_when_submitted(monkeypatch):
 
 def test_agent_failure_falls_back(monkeypatch):
     def boom(session, task):
-        raise RuntimeError("no network")
+        raise RuntimeError("network unreachable")
 
     monkeypatch.setattr(coach, "_run_agent", boom)
     calib = full_calib()
     result = coach.build_mapping("SuperTuxKart", calib, [], False)
-    assert result["rationale"] == ["offline default"] and coach.check(result["mapping"], calib, [], False) == []
+    assert result["rationale"] == ["offline default", "Coach offline: no connection to the model"]
+    assert coach.check(result["mapping"], calib, [], False) == []
+
+
+def test_out_of_credits_is_reported_plainly():
+    msg = "OpenAIRateLimitError: Error code: 429 - You have no credits remaining. Add credits to continue"
+    assert coach._short_reason(msg) == "the API account is out of credits"
+    assert coach._short_reason("AuthenticationError: 401 invalid api key") == "the API key was rejected"
 
 
 def test_review_session_shape():

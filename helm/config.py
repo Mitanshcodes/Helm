@@ -40,7 +40,7 @@ RELIABLE_MIN_PEAK_ABOVE_NEUTRAL = 0.15
 # Calibration never prompts for these, so they are trusted without a check: blinks drive the pause
 # gesture in every mapping, and quick mode also trusts the two expressions the judge profile uses.
 ASSUMED_RELIABLE = ("eyeBlinkLeft", "eyeBlinkRight")
-QUICK_ASSUMED_RELIABLE = ("browInnerUp", "jawOpen")
+QUICK_ASSUMED_RELIABLE = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight")   # default face buttons
 
 FACE_LOST_MS = 200                 # pad goes neutral after this long without a face
 STATS_WINDOW = 60                  # frames in the rolling fps and latency medians
@@ -48,6 +48,7 @@ NEAR_MISS_RATIO = 0.8              # an attempt that reaches this share of `on` 
 FIRED_HOLD_MS = 150                # a fire stays in the state message this long, so 30 Hz states never miss it
 COACH_TIMEOUT_S = 60
 COACH_DEFAULT_MODEL = "anthropic:claude-opus-5-5"   # overridden by the HELM_COACH_MODEL environment variable
+COACH_OPENAI_MODEL = "openai:gpt-5.5"              # used instead when only OPENAI_API_KEY is set (e.g. in .env)
 COACH_RECURSION_LIMIT = 60         # agent graph steps before it gives up
 COACH_THRESHOLD_STEP = 0.05        # offline review: how far one change moves on/off
 COACH_MIN_NEAR_MISSES = 3          # offline review: near-misses before a threshold is lowered
