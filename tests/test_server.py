@@ -139,3 +139,26 @@ def test_socket_broadcasts_state_events_frames_and_error_replies():
     assert seen["calibration_done"]["data"] == {"mode": "quick"}
     assert "nope" in seen["error"]["data"]["message"]
     assert ("pause", True) in rt.calls
+
+
+def test_profiles_route_lists_players_and_games(monkeypatch):
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    from helm import profiles
+
+    monkeypatch.setattr(profiles, "list_profiles", lambda: {"judge": ["SuperTuxKart"]})
+    assert TestClient(create_app(FakeRuntime())).get("/api/profiles").json() == {"judge": ["SuperTuxKart"]}
+
+
+def test_profiles_route_returns_empty_on_failure(monkeypatch):
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    from helm import profiles
+
+    def broken():
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(profiles, "list_profiles", broken)
+    assert TestClient(create_app(FakeRuntime())).get("/api/profiles").json() == {}

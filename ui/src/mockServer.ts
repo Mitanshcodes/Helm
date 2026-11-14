@@ -37,6 +37,28 @@ const MAPPING: Mapping = {
   pause: { gesture: "eyes_closed", hold_ms: 1000 },
 };
 
+const JUDGE_MAPPING: Mapping = {
+  player: "judge",
+  game: "SuperTuxKart",
+  axes: [{ source: "yaw", target: "lx", deadzone: 0.08, curve: 1.5, invert: false }],
+  triggers: [],
+  gestures: {
+    brow_raise: { kind: "blendshape", sources: ["browInnerUp"], on: 0.6, off: 0.4 },
+    eyes_closed: { kind: "blendshape", sources: ["eyeBlinkLeft", "eyeBlinkRight"], combine: "min", on: 0.6, off: 0.4 },
+  },
+  buttons: [{ gesture: "brow_raise", target: "A", mode: "tap" }],
+  auto: { rt: 1.0 },
+  pause: { gesture: "eyes_closed", hold_ms: 1000 },
+};
+
+const PROFILES: Record<string, string[]> = {
+  demo: ["SuperTuxKart"],
+  demo_webcam: ["SuperTuxKart"],
+  judge: ["SuperTuxKart"],
+  sam: ["SuperTuxKart"],
+};
+export const mockProfiles = async () => PROFILES;
+
 type Step = { step: string; prompt: string; seconds: number };
 const CALIBRATION: Step[] = [
   { step: "neutral", prompt: "Look at the screen and relax your face", seconds: 3 },
@@ -80,6 +102,7 @@ function landmarks(yaw: number, brow: number, jaw: number): [number, number][] {
 export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket {
   const t0 = performance.now();
   let mapping = MAPPING;
+  let player = "sam";
   let learned = ["left_smile"];
   let calibrated: "full" | "quick" | null = "full";
   let paused = false;
@@ -92,7 +115,7 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
   const timers: number[] = [];
 
   const later = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-  const event = (name: "calibration_done" | "gesture_trained" | "coach_result" | "error", data: Record<string, unknown>) =>
+  const event = (name: "calibration_done" | "gesture_trained" | "coach_result" | "profile_loaded" | "error", data: Record<string, unknown>) =>
     onMessage({ type: "event", name, data });
   const run = (steps: Step[], done: () => void) => (script = { steps, started: performance.now(), done });
 
@@ -172,7 +195,7 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
       face,
       paused,
       breath_connected: true,
-      profile: { player: "sam", game: mapping.game ?? "SuperTuxKart", calibrated },
+      profile: { player, game: mapping.game ?? "SuperTuxKart", calibrated },
       raw: face ? { yaw: yawDeg + 1.8, pitch: -1.8 + 1.5 * Math.sin(t / 3), roll: 0.6 + 0.8 * Math.sin(t / 5) } : { yaw: 0, pitch: 0, roll: 0 },
       axes: { yaw: face ? u : 0, pitch: 0, roll: 0 },
       breath: 0.5 * bump(t % 6, 0.5) * (breathIndex % 4 < 2 ? 1 : -1),
@@ -209,6 +232,16 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
         });
       } else if (cmd.cmd === "record_negative") {
         run([{ step: "negatives", prompt: "Talk, look around, laugh", seconds: 6 }], () => event("gesture_trained", { name: "none", accuracy: null }));
+      } else if (cmd.cmd === "load_profile") {
+        later(150, () => {
+          const judge = cmd.player === "judge";
+          player = cmd.player;
+          mapping = { ...(judge ? JUDGE_MAPPING : MAPPING), player: cmd.player, game: cmd.game };
+          calibrated = judge ? null : "full";
+          learned = judge ? [] : ["left_smile"];
+          script = null;
+          event("profile_loaded", { player: cmd.player, game: cmd.game });
+        });
       } else if (cmd.cmd === "delete_gesture") learned = learned.filter((g) => g !== cmd.name);
       else if (cmd.cmd === "set_mapping") {
         if (!cmd.mapping.pause) event("error", { message: "Mapping rejected", cmd: "set_mapping", errors: ["A pause gesture must be set"] });

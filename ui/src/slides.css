@@ -1,0 +1,230 @@
+/* OWNER: P4 */
+/* Pitch slides in the dashboard's tokens. Sized in vw so they fill a laptop, a tablet or a projector. */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-family: var(--font);
+  font-size: 1.55vw;
+  line-height: 1.35;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  height: 100vh;
+  overflow: hidden;
+  cursor: default;
+  user-select: none;
+}
+
+.slide {
+  display: none;
+  height: 100vh;
+  padding: 5vw 7vw;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2.2vw;
+}
+
+.slide.current {
+  display: flex;
+}
+
+h1 {
+  font-size: 9vw;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  max-width: 22em;
+  font-size: 3.4vw;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 1.3rem;
+}
+
+.title {
+  align-items: flex-start;
+  gap: 1.2vw;
+}
+
+.wheel {
+  width: 7vw;
+  height: 7vw;
+  color: var(--accent);
+}
+
+.lead {
+  font-size: 3vw;
+}
+
+.tag {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.foot {
+  max-width: 46em;
+  font-size: 1.1rem;
+  color: var(--muted);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1.2rem;
+}
+
+th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+th,
+td {
+  padding: 0.7em 1.5em 0.7em 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+td:first-child {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.flow {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1.6vw;
+  list-style: none;
+}
+
+.flow li {
+  position: relative;
+  padding: 1.3vw 1.1vw;
+  border: 1px solid var(--border);
+  border-radius: 1.2vw;
+  background: var(--card);
+}
+
+.flow li + li::before {
+  content: "→";
+  position: absolute;
+  left: -1.6vw;
+  top: 50%;
+  width: 1.6vw;
+  transform: translateY(-50%);
+  text-align: center;
+  color: var(--muted);
+}
+
+.flow b,
+.flow span {
+  display: block;
+}
+
+.flow b {
+  font-size: 1.15rem;
+}
+
+.flow span {
+  margin-top: 0.3em;
+  color: var(--muted);
+}
+
+.flow .accent {
+  border: 2px solid var(--accent);
+}
+
+.points {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1vw;
+  max-width: 44em;
+  list-style: none;
+  font-size: 1.25rem;
+}
+
+.points li {
+  position: relative;
+  padding-left: 1.4em;
+}
+
+.points li::before {
+  content: "";
+  position: absolute;
+  left: 0.15em;
+  top: 0.5em;
+  width: 0.45em;
+  height: 0.45em;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.numbers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2vw;
+}
+
+.numbers article {
+  padding: 2vw;
+  border: 1px solid var(--border);
+  border-radius: 1.6vw;
+  background: var(--card);
+}
+
+.numbers h3 {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.value {
+  font-size: 5.6vw;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.value span {
+  font-size: 1.6vw;
+  color: var(--muted);
+}
+
+.pending .value {
+  color: var(--muted);
+}
+
+.versus {
+  font-size: 1.15rem;
+}
+
+.versus .base {
+  font-weight: 700;
+}
+
+.how {
+  margin-top: 0.6em;
+  color: var(--muted);
+}
+
+#count {
+  position: fixed;
+  right: 2vw;
+  bottom: 1.4vw;
+  font-size: 0.8rem;
+  color: var(--muted);
+}

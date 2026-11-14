@@ -17,14 +17,21 @@ function WheelIcon() {
 
 function status(state: HelmState, connection: Connection): { tone: "ok" | "warn" | "off"; text: string } {
   if (connection !== "open") return { tone: "off", text: "Disconnected" };
-  if (state.progress) return { tone: "ok", text: "Setting up — follow the prompt" };
+  if (state.progress) return { tone: "ok", text: "Setting up" };
   if (state.paused) return { tone: "warn", text: "Paused" };
   if (!state.face) return { tone: "warn", text: "No face found" };
   return { tone: "ok", text: "Live — tracking your face" };
 }
 
-export function StatusBar(props: { state: HelmState; connection: Connection; send: Send; mode: CalibrationMode; compact: boolean }) {
-  const { state, connection, send, mode, compact } = props;
+export function StatusBar(props: {
+  state: HelmState;
+  connection: Connection;
+  send: Send;
+  mode: CalibrationMode;
+  compact: boolean;
+  onNextVisitor?: () => void;
+}) {
+  const { state, connection, send, mode, compact, onNextVisitor } = props;
   const { tone, text } = status(state, connection);
   const who = [state.profile?.player, state.profile?.game].filter(Boolean).map((s, i) => (i === 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s));
   return (
@@ -44,6 +51,11 @@ export function StatusBar(props: { state: HelmState; connection: Connection; sen
             <button className="btn" disabled={state.progress !== null} onClick={() => send({ cmd: "calibrate", mode })}>
               Recalibrate
             </button>
+            {onNextVisitor && (
+              <button className="btn" onClick={onNextVisitor} title="Load the judge profile and run a quick calibration">
+                Next visitor
+              </button>
+            )}
             <button className="btn primary" onClick={() => send({ cmd: "pause", on: !state.paused })}>
               {state.paused ? "Resume" : "Pause · or close eyes 1 s"}
             </button>

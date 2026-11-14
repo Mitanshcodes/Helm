@@ -208,6 +208,17 @@ def create_app(runtime: "Runtime") -> FastAPI:
         finally:
             hub.remove(sock)
 
+    @app.get("/api/profiles")
+    async def list_profiles() -> dict[str, list[str]]:
+        """player -> games with a saved mapping, for the dashboard's profile picker. Disk is read off the loop."""
+        from helm import profiles
+
+        try:
+            return await asyncio.to_thread(profiles.list_profiles)
+        except Exception:
+            log.exception("listing profiles failed")
+            return {}
+
     if (UI_DIST / "index.html").exists():                  # built dashboard: the demo needs one process
         from fastapi.staticfiles import StaticFiles
 

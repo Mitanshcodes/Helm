@@ -3,7 +3,9 @@
 // game; ?quick=1 makes calibration a quick one; ?mock=1 runs with no backend.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CoachResult, Command, EventMsg, Mapping, MappingStatus, Trained } from "./types";
-import { MOCK, useHelmSocket } from "./useHelmSocket";
+import { MOCK, fetchProfiles, useHelmSocket } from "./useHelmSocket";
+import { useFireClicks, useSetting, useSpokenPrompts } from "./feedback";
+import { JUDGE, ProfileCard } from "./components/ProfileCard";
 import { CameraView } from "./components/CameraView";
 import { CoachPanel } from "./components/CoachPanel";
 import { SipPuffCard, StatTiles, StickCard, ThrottleCard } from "./components/Controls";
@@ -30,6 +32,12 @@ export default function App() {
   const pending = useRef<number | undefined>(undefined); // timer of a set_mapping waiting for error-or-silence
   const faceSince = useRef<number | null>(null);
   const autoSent = useRef(false);
+  const [profiles, setProfiles] = useState<Record<string, string[]>>({});
+  const visitorPending = useRef(false); // "Next visitor" waits for the judge profile before calibrating
+  const sendRef = useRef<(cmd: Command) => void>(() => {});
+  const [voice, setVoice] = useSetting("voice");
+  const [clicks, setClicks] = useSetting("clicks");
+  const refreshProfiles = useCallback(() => void fetchProfiles().then(setProfiles), []);
 
   const onEvent = useCallback((msg: EventMsg) => {
     const data = msg.data;
@@ -38,6 +46,10 @@ export default function App() {
       setCoach(data as unknown as CoachResult);
       setCoachBusy(false);
     } else if (msg.name === "profile_loaded") {
+      if (visitorPending.current && data.player === JUDGE) {
+        visitorPending.current = false;
+        sendRef.current({ cmd: "calibrate", mode: "quick" });
+      }
       setApplied(null);
       setCoach(null);
       setTrained(null);
@@ -63,6 +75,23 @@ export default function App() {
     },
     [rawSend],
   );
+
+  sendRef.current = send;
+  useSpokenPrompts(state, voice);
+  useFireClicks(state, clicks);
+
+  useEffect(() => {
+    if (connection === "open") refreshProfiles();
+  }, [connection, refreshProfiles]);
+
+  const nextVisitor = useCallback(() => {
+    if (!state) return;
+    const games = profiles[JUDGE] ?? [];
+    const game = games.includes(state.profile.game) ? state.profile.game : games[0];
+    if (!game) return;
+    visitorPending.current = true;
+    send({ cmd: "load_profile", player: JUDGE, game });
+  }, [state, profiles, send]);
 
   const applyMapping = useCallback(
     (next: Mapping) => {
@@ -122,7 +151,14 @@ export default function App() {
   return (
     <>
       <main className={`page${OVERLAY ? " compact" : ""}${offline ? " dimmed" : ""}`} aria-hidden={offline}>
-        <StatusBar state={state} connection={connection} send={send} mode={QUICK ? "quick" : "full"} compact={OVERLAY} />
+        <StatusBar
+          state={state}
+          connection={connection}
+          send={send}
+          mode={QUICK ? "quick" : "full"}
+          compact={OVERLAY}
+          onNextVisitor={profiles[JUDGE]?.length ? nextVisitor : undefined}
+        />
         <StatusBanner state={state} />
         {state.progress && <Wizard progress={state.progress} />}
         <div className="columns">
@@ -144,6 +180,15 @@ export default function App() {
             <GestureRecorder state={state} send={send} trained={trained} busy={busy} />
             <MappingView mapping={mapping} status={mappingStatus} apply={applyMapping} send={send} />
             <CoachPanel state={state} send={send} result={coach} busy={coachBusy} apply={applyMapping} />
+            <ProfileCard
+              state={state}
+              send={send}
+              profiles={profiles}
+              voice={voice}
+              setVoice={setVoice}
+              clicks={clicks}
+              setClicks={setClicks}
+            />
           </div>
         )}
       </main>

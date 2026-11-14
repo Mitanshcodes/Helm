@@ -1,0 +1,122 @@
+<!doctype html>
+<!-- OWNER: P4 -->
+<!-- Pitch slides. Arrow keys, space or a click move between them. Numbers come from src/results.ts. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Helm · slides</title>
+  </head>
+  <body>
+    <main id="deck">
+      <section class="slide title">
+        <svg class="wheel" viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true">
+          <circle cx="22" cy="22" r="11" />
+          <circle cx="22" cy="22" r="3.2" />
+          <g id="spokes"></g>
+        </svg>
+        <h1>Helm</h1>
+        <p class="lead">A game controller you steer with your face.</p>
+        <p class="tag">Play with whatever moves.</p>
+      </section>
+
+      <section class="slide">
+        <h2>Every adaptive controller still assumes you can press something</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>What exists</th>
+              <th>What it needs from the player</th>
+              <th>Where it falls short in a game</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Switch hubs</td>
+              <td>A body part that can press</td>
+              <td>Extra hardware per button; analog steering is hard</td>
+            </tr>
+            <tr>
+              <td>Sip-and-puff, mouth joysticks</td>
+              <td>A lip seal and enough breath</td>
+              <td>A mouthpiece, and few commands at once</td>
+            </tr>
+            <tr>
+              <td>Face-as-mouse tools</td>
+              <td>Head and face movement</td>
+              <td>A cursor and keys on fixed thresholds: no sticks, no triggers</td>
+            </tr>
+            <tr>
+              <td>Eye tracking</td>
+              <td>Steady gaze</td>
+              <td>You need your eyes to watch the game</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="foot">Helm is designed for gamers with limited hand and arm movement who can still move their head or face, even a little, even on one side.</p>
+      </section>
+
+      <section class="slide">
+        <h2>A webcam in, a real Xbox controller out</h2>
+        <ol class="flow">
+          <li><b>Webcam</b><span>any laptop camera</span></li>
+          <li><b>Face tracking</b><span>head pose and 52 expression scores</span></li>
+          <li><b>Your calibration</b><span>your range, your strength</span></li>
+          <li class="accent"><b>Your gestures</b><span>thresholds plus ones Helm learns</span></li>
+          <li><b>Mapping</b><span>sticks, triggers, buttons</span></li>
+          <li><b>Virtual Xbox pad</b><span>any game, no mods</span></li>
+        </ol>
+        <p class="foot">Everything runs on the laptop. Video never leaves it, and nothing is recorded. An optional straw and pressure sensor add breath as one more input.</p>
+      </section>
+
+      <section class="slide">
+        <h2>The controller adapts to the player</h2>
+        <ul class="points">
+          <li><b>Your range is full range.</b> Calibration measures how far you can comfortably turn, so ten degrees of movement can still mean full stick.</li>
+          <li><b>It learns your gestures.</b> Show Helm any movement five times, then talk and look around so it learns what not to fire on.</li>
+          <li><b>Analog, not just on and off.</b> A half-open jaw is half throttle.</li>
+          <li><b>It notices fatigue.</b> When a gesture weakens, its threshold comes down and the screen says so.</li>
+          <li><b>A coach builds the mapping.</b> An agent reads the game's controls and your reliable gestures, drafts a mapping, checks it, and revises it after a session.</li>
+        </ul>
+      </section>
+
+      <section class="slide">
+        <h2>We measured it</h2>
+        <div class="numbers">
+          <article data-result="latency" data-unit="ms" data-digits="0">
+            <h3>Motion to screen</h3>
+            <p class="value"></p>
+            <p class="versus"><span class="base"></span> with a finger on a real controller</p>
+            <p class="how">240 fps video, 20 eyebrow raises, median</p>
+          </article>
+          <article data-result="falseTriggers" data-unit="per min" data-digits="1">
+            <h3>False triggers</h3>
+            <p class="value"></p>
+            <p class="versus"><span class="base"></span> with one fixed threshold</p>
+            <p class="how">3 minutes of reading, chatting and watching, median</p>
+          </article>
+          <article data-result="throughput" data-unit="bits/s" data-digits="2">
+            <h3>Small movements</h3>
+            <p class="value"></p>
+            <p class="versus"><span class="base"></span> with fixed gain</p>
+            <p class="how">Target test at a third of normal range</p>
+          </article>
+        </div>
+        <p class="foot">No participant had a motor impairment. The restricted-range test is a proxy, not a substitute, and testing with the people Helm is designed for is the first thing we do next.</p>
+      </section>
+
+      <section class="slide">
+        <h2>What comes next</h2>
+        <ul class="points">
+          <li><b>Test with real users.</b> Reach out to organizations such as AbleGamers and Makers Making Change.</li>
+          <li><b>Open source, free for players.</b> It runs on a webcam people already own.</li>
+          <li><b>More places to play.</b> A Linux backend, a mouse-and-keyboard mode, and a shared library of per-game profiles.</li>
+          <li><b>Beyond games.</b> The same pipeline can drive desktop navigation and communication shortcuts.</li>
+        </ul>
+        <p class="tag">Gamers with limited movement shouldn’t have to watch. This is Helm.</p>
+      </section>
+    </main>
+    <p id="count" aria-live="polite"></p>
+    <script type="module" src="/src/slides.ts"></script>
+  </body>
+</html>

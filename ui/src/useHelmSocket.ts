@@ -2,11 +2,23 @@
 // The dashboard's one data source: latest state and frame (at most one render per animation frame), the
 // connection status, and a typed send(). ?mock=1 or VITE_MOCK=1 swaps the socket for the in-browser mock.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { startMock } from "./mockServer";
+import { mockProfiles, startMock } from "./mockServer";
 import type { Command, Connection, EventMsg, FrameMsg, HelmState, ServerMsg } from "./types";
 import { connect, type HelmSocket } from "./ws";
 
 export const MOCK = new URLSearchParams(location.search).has("mock") || import.meta.env.VITE_MOCK === "1";
+const HTTP_BASE = import.meta.env.DEV ? "http://localhost:8000" : "";
+
+/** player -> games with a saved mapping. Empty when the server cannot be reached. */
+export async function fetchProfiles(): Promise<Record<string, string[]>> {
+  if (MOCK) return mockProfiles();
+  try {
+    const res = await fetch(`${HTTP_BASE}/api/profiles`);
+    return res.ok ? ((await res.json()) as Record<string, string[]>) : {};
+  } catch {
+    return {};
+  }
+}
 
 export function useHelmSocket(onEvent: (event: EventMsg) => void) {
   const [state, setState] = useState<HelmState | null>(null);
