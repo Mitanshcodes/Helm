@@ -95,8 +95,15 @@ BREATH_HARD = 0.65
 BREATH_MIN_PRESS_MS = 80
 BREATH_BASELINE_S = 2.0
 BREATH_BASELINE_WINDOW_S = 5.0     # rolling median window, only while no press is active
-BREATH_MAX_PUFF_MV = 400.0         # displacement from baseline at full level; calibrate() overrides
-BREATH_MAX_SIP_MV = 400.0
+# Displacement from baseline at full level; calibrate() overrides per player. Measured on the real
+# UNO Q rig: rest sits mid-rail at ~2390 mV and a committed breath swings the sensor most of the way
+# to a rail -- a hard sip reached 22 mV (displacement 2360) and a hard puff 4792 mV (2410). Sip is
+# the stronger and far more repeatable direction; puff measured 1024, 1078 and 2410 mV across three
+# tries, so its scale is set near the low end of that spread or an ordinary puff never clears
+# BREATH_HARD and the latched throttle would not fire. The earlier 400.0 placeholders were ~6x too
+# small, which saturated level on a light breath and left the analog brake with no usable travel.
+BREATH_MAX_PUFF_MV = 1000.0
+BREATH_MAX_SIP_MV = 1800.0
 SERIAL_PROBE_S = 3.0               # a classic Uno resets when the port opens: ~1.5 s of silence first
 SERIAL_READ_TIMEOUT_S = 0.2
 SERIAL_RECONNECT_S = 1.0           # wait before retrying after an unplugged cable

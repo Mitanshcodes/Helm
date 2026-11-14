@@ -189,6 +189,12 @@ def fast_breath(monkeypatch):
     # FakePort serves lines faster than any real board, which the backlog drain would read as a
     # stale queue. Draining has its own test below; everywhere else it is switched off.
     monkeypatch.setattr(config, "SERIAL_DRAIN_MAX_S", 0.0)
+    # These tests assert on signed level and event strength from synthetic pressures a few hundred
+    # millivolts either side of the 2500 rest line. Pin the full-scale displacement so that
+    # retuning the real rig cannot turn a serial-plumbing test red: BREATH_MAX_*_MV track whatever
+    # the measured sensor swing turns out to be, and that is not what these tests are about.
+    monkeypatch.setattr(config, "BREATH_MAX_PUFF_MV", 400.0)
+    monkeypatch.setattr(config, "BREATH_MAX_SIP_MV", 400.0)
 
 
 def rest(n, mv=2500):
