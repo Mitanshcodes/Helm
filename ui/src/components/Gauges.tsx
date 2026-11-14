@@ -5,6 +5,14 @@ import { useRef } from "react";
 import { bindingOf, clamp01, humanize } from "../format";
 import type { HelmState, Mapping } from "../types";
 
+// Expressions worth watching even when the mapping does not use them, to see how well each one is detected
+// for this player. Left and right are the player's own sides.
+const WATCH: [string, string][] = [
+  ["mouthSmileLeft", "Smile, your left side"],
+  ["mouthSmileRight", "Smile, your right side"],
+  ["mouthPucker", "Pucker"],
+];
+
 const FLASH_MS = 450; // how long a row reads "Firing" after a tap, so it can be seen from across a table
 
 function PauseIcon() {
@@ -40,6 +48,32 @@ interface RowProps {
   note: string | null;
   on?: number;
   off?: number;
+}
+
+function reliability(state: HelmState, source: string): { tone: "ok" | "warn" | "off"; text: string } {
+  if (state.profile.calibrated !== "full") return { tone: "off", text: "Not checked yet" };
+  return (state.gestures?.reliable ?? []).includes(source)
+    ? { tone: "ok", text: "Reliable for you" }
+    : { tone: "warn", text: "Weak for you" };
+}
+
+function WatchRow({ label, level, check }: { label: string; level: number; check: { tone: string; text: string } }) {
+  return (
+    <li className="gesture watch">
+      <div className="gesture-top">
+        <span className="gesture-name">{label}</span>
+        <span className="gesture-right">
+          <span className={`mini-pill ${check.tone}`}>{check.text}</span>
+          <span className="score">{level.toFixed(2)}</span>
+        </span>
+      </div>
+      <div className="meter" role="img" aria-label={`${label} raw score ${level.toFixed(2)}`}>
+        <div className="meter-track">
+          <div className="meter-fill" style={{ width: `${clamp01(level) * 100}%` }} />
+        </div>
+      </div>
+    </li>
+  );
 }
 
 function GestureRow({ name, level, firing, target, note, on, off }: RowProps) {
@@ -126,6 +160,24 @@ export function Gauges({ state, mapping }: { state: HelmState; mapping: Mapping 
           );
         })}
       </ul>
+      {(() => {
+        const used = new Set(Object.values(mapping?.gestures ?? {}).flatMap((g) => g.sources ?? []));
+        const watch = WATCH.filter(([source]) => !used.has(source) && state.expressions?.[source] !== undefined);
+        if (watch.length === 0) return null;
+        return (
+          <>
+            <div className="watch-head">
+              <h3>Also watching</h3>
+              <span className="hint">Raw scores, not mapped to anything</span>
+            </div>
+            <ul className="gestures">
+              {watch.map(([source, label]) => (
+                <WatchRow key={source} label={label} level={state.face ? state.expressions![source] : 0} check={reliability(state, source)} />
+              ))}
+            </ul>
+          </>
+        );
+      })()}
       <div aria-live="polite">
         {(state.notices ?? []).map((notice) => (
           <p key={notice} className="notice">

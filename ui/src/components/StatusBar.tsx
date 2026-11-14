@@ -30,8 +30,9 @@ export function StatusBar(props: {
   mode: CalibrationMode;
   compact: boolean;
   onNextVisitor?: () => void;
+  onTeach?: () => void;
 }) {
-  const { state, connection, send, mode, compact, onNextVisitor } = props;
+  const { state, connection, send, mode, compact, onNextVisitor, onTeach } = props;
   const { tone, text } = status(state, connection);
   const who = [state.profile?.player, state.profile?.game].filter(Boolean).map((s, i) => (i === 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s));
   return (
@@ -51,6 +52,11 @@ export function StatusBar(props: {
             <button className="btn" disabled={state.progress !== null} onClick={() => send({ cmd: "calibrate", mode })}>
               Recalibrate
             </button>
+            {onTeach && (
+              <button className="btn" disabled={state.progress !== null} onClick={onTeach}>
+                Teach a move
+              </button>
+            )}
             {onNextVisitor && (
               <button className="btn" onClick={onNextVisitor} title="Load the judge profile and run a quick calibration">
                 Next visitor

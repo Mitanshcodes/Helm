@@ -70,9 +70,9 @@ const CALIBRATION: Step[] = [
 const TAKES = 10;
 const takes = (name: string): Step[] =>
   Array.from({ length: TAKES }, (_, i) => i + 1).flatMap((n) => [
-    { step: `take_${n}`, prompt: "Get ready", seconds: 1 },
-    { step: `take_${n}`, prompt: `Do “${name.replace(/_/g, " ")}” now, and hold`, seconds: 1 },
-    { step: `take_${n}`, prompt: "Relax", seconds: 1 },
+    { step: `take_${n}_ready`, prompt: "Get ready…", seconds: 2 },
+    { step: `take_${n}_go`, prompt: `Go! Do “${name.replace(/_/g, " ")}” and hold`, seconds: 1.5 },
+    { step: `take_${n}_relax`, prompt: "Relax", seconds: 1.5 },
   ]);
 const EVERYDAY_FACE: Step[] = [
   { step: "neutral", prompt: "Look at the screen and relax your face", seconds: 10 },
@@ -213,6 +213,13 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
       gestures: { learned, reliable: ["browInnerUp", "jawOpen", "cheekPuff"] },
       notices: t > 20 ? ["cheek_puff is weakening; threshold lowered"] : [],
       mapping,
+      expressions: face
+        ? {
+            mouthSmileLeft: 0.08 + 0.6 * bump((t + 1) % 9, 1.2),
+            mouthSmileRight: 0.06 + 0.3 * bump((t + 5) % 9, 1.2),
+            mouthPucker: 0.05 + 0.45 * bump((t + 3) % 11, 1.5),
+          }
+        : {},
     });
     if (tick++ % 2 === 0) {
       onMessage({ type: "frame", jpeg: "", landmarks: face ? landmarks(u, levels.brow_raise, jaw) : null });

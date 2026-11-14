@@ -43,7 +43,8 @@ export interface HelmState {
   progress: Progress | null;
   gestures: { learned: string[]; reliable: string[] };
   notices: string[];
-  mapping?: Mapping; // not in the protocol yet (asked of P1); used when present
+  mapping?: Mapping;
+  expressions?: Record<string, number>; // raw blendshape scores for a watch list (asked of P1); shown when present
 }
 
 export interface FrameMsg {

@@ -15,6 +15,7 @@ import { GestureRecorder } from "./components/GestureRecorder";
 import { MappingView } from "./components/MappingView";
 import { StatusBanner, StatusBar } from "./components/StatusBar";
 import { Wizard } from "./components/Wizard";
+import { TeachPanel } from "./components/TeachPanel";
 
 const params = new URLSearchParams(location.search);
 const OVERLAY = params.has("overlay");
@@ -44,6 +45,11 @@ export default function App() {
   const onEvent = useCallback((msg: EventMsg) => {
     const data = msg.data;
     if (teachRef.current?.onEvent(msg, playerRef.current)) return;
+    if (msg.name === "calibration_done") {
+      // Right after a full calibration is when almost everyone wants their own move: offer it in place.
+      if (data.mode === "full" && playerRef.current !== JUDGE && !OVERLAY) teachRef.current?.offer();
+      return;
+    }
     if (msg.name === "coach_result") {
       setCoach(data as unknown as CoachResult);
       setCoachBusy(false);
@@ -115,7 +121,7 @@ export default function App() {
     autoSent.current = false; // a restarted server may have no calibration again
     faceSince.current = null;
     setCoachBusy(false);
-    teach.reset();
+    teach.close();
   }, [connection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // First calibration starts by itself once a face has been visible for a second. The overlay window never
@@ -162,9 +168,26 @@ export default function App() {
           mode={QUICK ? "quick" : "full"}
           compact={OVERLAY}
           onNextVisitor={profiles[JUDGE]?.length ? nextVisitor : undefined}
+          onTeach={teach.flow ? undefined : teach.offer}
         />
         <StatusBanner state={state} />
-        {state.progress && <Wizard progress={state.progress} flow={teach.flow} />}
+        {state.progress ? (
+          <Wizard progress={state.progress} flow={teach.flow} />
+        ) : (
+          teach.flow &&
+          !OVERLAY && (
+            <TeachPanel
+              state={state}
+              flow={teach.flow}
+              hasFace={teach.hasFace(state.profile.player)}
+              voice={voice}
+              begin={teach.begin}
+              go={teach.go}
+              offer={teach.offer}
+              close={teach.close}
+            />
+          )
+        )}
         <div className="columns">
           <div className="col left">
             <CameraView frame={frame} state={state} compact={OVERLAY} />
@@ -181,14 +204,7 @@ export default function App() {
         </div>
         {!OVERLAY && (
           <div className="tools">
-            <GestureRecorder
-              state={state}
-              send={send}
-              trained={teach.trained}
-              flow={teach.flow}
-              hasFace={teach.hasFace(state.profile.player)}
-              start={teach.start}
-            />
+            <GestureRecorder state={state} send={send} busy={state.progress !== null || teach.flow !== null} onTeach={teach.offer} />
             <MappingView mapping={mapping} status={mappingStatus} apply={applyMapping} send={send} />
             <CoachPanel state={state} send={send} result={coach} busy={coachBusy} apply={applyMapping} />
             <ProfileCard
