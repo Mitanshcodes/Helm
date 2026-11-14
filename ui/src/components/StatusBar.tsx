@@ -1,95 +1,96 @@
 // OWNER: P4
-// Header (wordmark, player and game, live status pill, Recalibrate, Pause) and the paused banner.
-import type { CalibrationMode, Connection, HelmState, Send } from "../types";
+// The masthead: the "helm" wordmark printed over the wheel, the issue line, who is playing what, the buttons
+// (Next visitor, Recalibrate or Skip, Pause), and the round status stamp.
+import { humanize } from "../format";
+import type { HelmState } from "../types";
+import { Blur } from "./Blur";
+import { HelmWheel } from "./PixelIcon";
 
-function WheelIcon() {
-  const spokes = [0, 45, 90, 135, 180, 225, 270, 315];
+export type Status = "offline" | "calibrating" | "teaching" | "paused" | "noface" | "live";
+
+export function statusOf(state: HelmState | null, open: boolean, teaching: boolean): Status {
+  if (!open || !state) return "offline";
+  if (state.progress && teaching) return "teaching";
+  if (state.progress) return "calibrating";
+  if (state.paused) return "paused";
+  if (!state.face) return "noface";
+  return "live";
+}
+
+const STAMP: Record<Status, string> = {
+  offline: "OFFLINE",
+  calibrating: "SETUP",
+  teaching: "LEARNING",
+  paused: "PAUSED",
+  noface: "NO FACE",
+  live: "LIVE",
+};
+
+export function Wordmark() {
   return (
-    <svg className="wheel" viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
-      <circle cx="22" cy="22" r="11" />
-      <circle cx="22" cy="22" r="3.2" />
-      {spokes.map((deg) => (
-        <line key={deg} x1="22" y1="5" x2="22" y2="11" transform={`rotate(${deg} 22 22)`} />
-      ))}
-    </svg>
+    <div className="wordmark-wrap" aria-hidden="true">
+      <HelmWheel className="wordmark-wheel" size={96} />
+      <span className="wordmark">helm</span>
+    </div>
   );
 }
 
-function status(state: HelmState, connection: Connection): { tone: "ok" | "warn" | "off"; text: string } {
-  if (connection !== "open") return { tone: "off", text: "Disconnected" };
-  if (state.progress) return { tone: "ok", text: "Setting up" };
-  if (state.paused) return { tone: "warn", text: "Paused" };
-  if (!state.face) return { tone: "warn", text: "No face found" };
-  return { tone: "ok", text: "Live — tracking your face" };
+export function StatusStamp({ status }: { status: Status }) {
+  return (
+    <div className={`status-stamp ${status}`} role="status">
+      <small>STATUS</small>
+      <b>{STAMP[status]}</b>
+    </div>
+  );
 }
 
-export function StatusBar(props: {
+export function Header(props: {
   state: HelmState;
-  connection: Connection;
-  send: Send;
-  mode: CalibrationMode;
-  compact: boolean;
-  onNextVisitor?: () => void;
-  onTeach?: () => void;
+  status: Status;
+  setup: boolean; // calibration or teaching is on screen: the live-only buttons are faded and unreachable
+  canSkip: boolean;
+  hold: number;
+  onNextPlayer?: () => void;
+  onPause: () => void;
+  onRecalibrate: () => void;
+  onSkip: () => void;
 }) {
-  const { state, connection, send, mode, compact, onNextVisitor, onTeach } = props;
-  const { tone, text } = status(state, connection);
-  const hold = holdSeconds(state);
-  const who = [state.profile?.player, state.profile?.game].filter(Boolean).map((s, i) => (i === 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s));
+  const { state, status, setup, canSkip, hold, onNextPlayer, onPause, onRecalibrate, onSkip } = props;
+  const skipping = status === "calibrating" && canSkip;
   return (
-    <header className="header">
-      <div className="brand">
-        <WheelIcon />
-        <h1>Helm</h1>
-        {who.length > 0 && !compact && <span className="who">{who.join(" · ")}</span>}
-      </div>
-      <div className="header-actions">
-        <span className={`pill ${tone}`} aria-live="polite">
-          <span className="dot" />
-          {text}
-        </span>
-        {!compact && (
-          <>
-            <span className="header-sep" aria-hidden="true" />
-            <button className="btn quiet" disabled={state.progress !== null} onClick={() => send({ cmd: "calibrate", mode })}>
-              Recalibrate
-            </button>
-            {onTeach && (
-              <button className="btn quiet" disabled={state.progress !== null} onClick={onTeach}>
-                Teach a move
-              </button>
-            )}
-            {onNextVisitor && (
-              <button className="btn quiet" onClick={onNextVisitor} title="Load the judge profile and run a quick calibration">
+    <header className="masthead">
+      <h1 className="sr-only">Helm</h1>
+      <Wordmark />
+      <div className="masthead-text">
+        <p className="kicker">ISSUE #1 · HACKPRINCETON FALL '26</p>
+        <p className="who">
+          <mark>{humanize(state.profile.player)}</mark> is playing <mark>{state.profile.game}</mark> with their face.
+        </p>
+        <div className="masthead-actions">
+          {onNextPlayer && (
+            <Blur on={setup} className="inline">
+              <button className="btn" onClick={onNextPlayer} title="Load the guest profile and run a quick calibration">
                 Next visitor
               </button>
-            )}
-            <button
-              className="btn primary"
-              onClick={() => send({ cmd: "pause", on: !state.paused })}
-              title={`Or keep your eyes closed for ${hold} s`}
-            >
-              {state.paused ? "Resume" : "Pause"}
-              <small>or eyes shut {hold} s</small>
+            </Blur>
+          )}
+          {skipping ? (
+            <button className="btn" onClick={onSkip} title="Stop the full calibration and only learn the resting face (2 s)">
+              Skip calibration
             </button>
-          </>
-        )}
+          ) : (
+            <button className="btn" onClick={onRecalibrate} disabled={state.progress !== null}>
+              Recalibrate
+            </button>
+          )}
+          <Blur on={setup} className="inline">
+            <button className="btn pink" aria-pressed={state.paused} onClick={onPause}>
+              <b>{state.paused ? "Resume" : "Pause"}</b> <small>· or close eyes {hold} s</small>
+            </button>
+          </Blur>
+        </div>
       </div>
+      <StatusStamp status={status} />
     </header>
-  );
-}
-
-/** The pause hold from the active mapping, in seconds (the backend default is 2 s). */
-function holdSeconds(state: HelmState): number {
-  return (state.mapping?.pause?.hold_ms ?? 2000) / 1000;
-}
-
-export function StatusBanner({ state }: { state: HelmState }) {
-  if (!state.paused || state.progress) return null;
-  const hold = holdSeconds(state);
-  return (
-    <div className="banner" role="status">
-      Paused — keep your eyes closed for {hold} {hold === 1 ? "second" : "seconds"} to resume
-    </div>
   );
 }

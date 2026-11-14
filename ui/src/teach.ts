@@ -15,6 +15,8 @@ export const takeNumber = (step: string) => Number(TAKE.exec(step)?.[1] ?? 0);
 export const takePhase = (step: string) => TAKE.exec(step)?.[2] ?? null;
 
 export const READY_MS = 5000; // pause before each recording; Enter or "Start now" skips it
+// What the button promises. Mirrors config.TAKES (5) and the take timing in P3's TakeRecorder; update with them.
+export const TAKES_LABEL = "5 takes · about 40 s";
 
 export type Stage = "intro" | "ready_face" | "face" | "ready_move" | "move" | "result";
 

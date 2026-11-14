@@ -57,8 +57,7 @@ export function MappingView(props: { mapping: Mapping | null; catalog?: Catalog;
   };
 
   return (
-    <section className="card">
-      <h2>Mapping</h2>
+    <section className="tool">
       {mapping ? (
         <MappingEditor mapping={mapping} catalog={catalog} status={status} apply={apply} send={send} />
       ) : (

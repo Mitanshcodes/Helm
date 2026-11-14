@@ -13,5 +13,7 @@ export const EYE_B = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 1
 export const BROW_A = [276, 283, 282, 295, 285];
 export const BROW_B = [46, 53, 52, 65, 55];
 
+export const NOSE = [168, 6, 197, 195, 5, 4];
+
 export const CLOSED_CONTOURS = [FACE_OVAL, LIPS, EYE_A, EYE_B];
-export const OPEN_CONTOURS = [BROW_A, BROW_B];
+export const OPEN_CONTOURS = [BROW_A, BROW_B, NOSE];

@@ -1,33 +1,27 @@
 /* OWNER: P4 */
-/* A small companion beside the game, using the dashboard's existing assistive palette. */
-.game-overlay { max-width: 560px; margin: 0 auto; padding: 14px; }
-.overlay-header, .overlay-section-head, .overlay-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.overlay-header { margin-bottom: 12px; }
-.overlay-header h1 { font-size: 22px; white-space: nowrap; }
-.overlay-header h1 span { font-size: 14px; font-weight: 400; color: var(--muted); margin-left: 5px; }
-.overlay-status { font-size: 13px; font-weight: 700; color: var(--warn); background: var(--warn-bg); border-radius: 6px; padding: 4px 7px; text-align: right; }
-.overlay-status.live { color: var(--ok); background: var(--ok-bg); }
-.game-overlay .card { padding: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: none; }
-.game-overlay .card-head { padding: 8px 12px; margin: 0; }
-.game-overlay .card-head h2, .overlay-section-head h2 { font-size: 16px; }
-.game-overlay .card-head .state { font-size: 12px; padding: 3px 7px; }
-.game-overlay .camera-panel { border-radius: 0; }
-.game-overlay .camera-panel canvas { width: 100%; display: block; aspect-ratio: 4 / 3; }
-.game-overlay .camera-message { font-size: 16px; }
-.overlay-camera-empty { aspect-ratio: 4 / 3; background: var(--camera); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border-radius: 10px; text-align: center; padding: 16px; }
-.overlay-camera-empty span { font-size: 14px; color: var(--camera-ink); }
-.overlay-controller { padding-top: 14px; }
-.overlay-section-head span { font-size: 12px; color: var(--muted); }
-.controller-view { width: 100%; height: auto; display: block; overflow: visible; }
-.controller-view text { text-anchor: middle; font-family: var(--font); font-size: 12px; fill: var(--muted); font-weight: 700; }
-.pad-shell { fill: var(--card); stroke: #888e99; stroke-width: 1.5; }
-.pad-button circle, .pad-button rect, .pad-well { fill: var(--track); stroke: #888e99; stroke-width: 1; }
-.pad-button.is-pressed circle, .pad-button.is-pressed rect, .pad-stick.is-pressed .pad-thumb { fill: var(--accent); stroke: var(--accent); }
-.pad-button.is-pressed text { fill: var(--accent-ink); }
-.pad-crosshair { stroke: #c4c7cd; stroke-width: 1; }
-.pad-thumb { fill: var(--idle); stroke: var(--accent); stroke-width: 2; }
-.pad-trigger-track { fill: #dedfe3; }
-.pad-trigger-fill { fill: var(--accent); }
-.overlay-button-readout { text-align: center; color: var(--muted); font-size: 13px; min-height: 18px; overflow-wrap: anywhere; }
-.overlay-footer { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
-.overlay-notice { margin-top: 10px; padding: 10px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); font-size: 14px; }
+/* The small companion window beside the game, in the same LCD look as the dashboard. */
+.game-overlay {
+  max-width: 560px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.overlay-header,
+.overlay-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.overlay-notice {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.camera-msg.static {
+  position: static;
+  padding: 40px 0;
+}

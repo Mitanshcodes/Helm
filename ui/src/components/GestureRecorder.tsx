@@ -8,8 +8,7 @@ export function GestureRecorder(props: { state: HelmState; send: Send; busy: boo
   const { state, send, busy, onTeach, mapping, apply } = props;
   const learned = state.gestures.learned;
   return (
-    <section className="card">
-      <h2>Your moves</h2>
+    <section className="tool">
       <p className="caption">Moves Helm learned from you. Tap a button to put a move on it (tap again to take it off).</p>
       <ul className="list">
         {learned.map((g) => (

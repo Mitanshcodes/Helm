@@ -17,8 +17,7 @@ export function CoachPanel(props: { state: HelmState; send: Send; result: CoachR
   useEffect(() => setAccepted(false), [result]);
 
   return (
-    <section className="card">
-      <h2>Coach</h2>
+    <section className="tool">
       <div className="line">
         <input list="games" value={game} onChange={(e) => setGame(e.target.value)} aria-label="Game" />
         <datalist id="games">

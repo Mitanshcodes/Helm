@@ -3,14 +3,14 @@
 // stays uncluttered. The chosen tab is remembered in this browser.
 import { useEffect, useState, type ReactNode } from "react";
 
-export type TabId = "mapping" | "coach" | "moves" | "profile";
+export type TabId = "mapping" | "coach" | "moves" | "profile" | "dev";
 const KEY = "helm.setupTab";
 
 export function useSetupTab(): [TabId, (t: TabId) => void] {
   const [tab, setTab] = useState<TabId>(() => {
     try {
       const saved = localStorage.getItem(KEY);
-      if (saved === "mapping" || saved === "coach" || saved === "moves" || saved === "profile") return saved;
+      if (saved === "mapping" || saved === "coach" || saved === "moves" || saved === "profile" || saved === "dev") return saved;
     } catch {
       /* storage blocked: default tab */
     }
@@ -30,9 +30,9 @@ export function SetupTabs(props: { tab: TabId; setTab: (t: TabId) => void; tabs:
   const { tab, setTab, tabs } = props;
   const active = tabs.find((t) => t.id === tab) ?? tabs[0];
   return (
-    <section className="card setup">
+    <section className="paper-card setup" id="setup">
       <div className="setup-head">
-        <h2>Setup</h2>
+        <h2 className="display small">the back pages</h2>
         <div className="tabs" role="tablist" aria-label="Setup">
           {tabs.map((t) => (
             <button
