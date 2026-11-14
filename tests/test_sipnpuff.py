@@ -504,3 +504,19 @@ def test_a_corrupt_breath_range_falls_back_to_defaults(tmp_path, monkeypatch):
                     "not json", '{"max_puff_mv": "x", "max_sip_mv": 1}', "{}"):
         (tmp_path / "sam" / "breath.json").write_text(payload)
         assert profiles.load_breath("sam") is None, payload
+
+
+def test_a_refused_measurement_is_not_marked_accepted():
+    """main.py persists only when `accepted`: a breath.json written from a refused flow would
+    look calibrated and would override a future retune of the config defaults."""
+    sip = SipPuff(None)
+    cal = BreathCalibrator(sip)
+    walk(cal, sip, sip_mv=20.0, puff_mv=20.0)
+    cal.result()
+    assert cal.accepted is False
+
+    sip2 = SipPuff(None)
+    good = BreathCalibrator(sip2)
+    walk(good, sip2, sip_mv=2400.0, puff_mv=20.0)       # one direction is enough to be worth saving
+    good.result()
+    assert good.accepted is True

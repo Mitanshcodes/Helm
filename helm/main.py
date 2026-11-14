@@ -156,6 +156,7 @@ class Runtime:
         # Pipeline-thread state.
         self._calibrator: Calibrator | None = None
         self._breath_cal: BreathCalibrator | None = None
+        self._breath_accepted = False
         self._take_recorder: TakeRecorder | None = None
         self._last_idle = True
         self._last_face_ns = 0
@@ -419,11 +420,17 @@ class Runtime:
             if progress.done:
                 max_puff, max_sip = self._breath_cal.result()
                 notes = self._breath_cal.notes
+                self._breath_accepted = self._breath_cal.accepted
                 self._breath_cal = None
                 self._sip.calibrate(max_puff, max_sip)
-                self._worker(profiles.save_breath, self.player, max_puff, max_sip)
+                # Only persist a real measurement. Writing the unchanged defaults would leave a
+                # breath.json that looks calibrated and, worse, would override a future retune of
+                # the config defaults with numbers nobody ever measured.
+                if self._breath_accepted:
+                    self._worker(profiles.save_breath, self.player, max_puff, max_sip)
                 self._event("breath_calibration_done",
-                            {"max_puff_mv": max_puff, "max_sip_mv": max_sip, "notes": notes})
+                            {"max_puff_mv": max_puff, "max_sip_mv": max_sip, "notes": notes,
+                             "saved": self._breath_accepted})
                 progress = None
 
         s = self._normalizer.update(f, breath=self._sip.level, idle=self._last_idle)

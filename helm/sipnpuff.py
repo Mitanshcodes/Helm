@@ -347,6 +347,7 @@ class BreathCalibrator:
         self._total_s = sum(s[1] for s in self._STEPS)
         self._measured: dict[str, float] = {}
         self.done = False
+        self.accepted = False      # did either direction produce a measurement worth keeping?
         self.notes: list[str] = []
 
     def feed(self, t_s: float) -> Progress:
@@ -386,6 +387,7 @@ class BreathCalibrator:
         """
         current_puff, current_sip = self._sip.scales
         self.notes = []                 # idempotent: a second call must not double the notes
+        self.accepted = False
         out = []
         for direction, current in (("puff", current_puff), ("sip", current_sip)):
             peak = self._measured.get(direction, 0.0)
@@ -397,6 +399,7 @@ class BreathCalibrator:
                 continue
             scaled = min(peak * config.CALIB_BREATH_FRACTION, config.CALIB_BREATH_MAX_MV)
             out.append(max(scaled, 1.0))
+            self.accepted = True
         return out[0], out[1]
 
 
