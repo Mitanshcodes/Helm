@@ -3,6 +3,7 @@
 
 export type Axis = "yaw" | "pitch" | "roll";
 export type CalibrationMode = "full" | "quick";
+export type Connection = "connecting" | "open" | "closed";
 
 export interface Progress {
   active: boolean;
@@ -11,6 +12,17 @@ export interface Progress {
   progress: number; // 0..1 within the step
   overall: number; // 0..1 across the whole flow
   done: boolean;
+}
+
+export interface Mapping {
+  player?: string;
+  game?: string;
+  axes?: { source: string; target: string; deadzone?: number; curve?: number; invert?: boolean }[];
+  triggers?: { source: string; target: string; lo?: number; hi?: number }[];
+  gestures?: Record<string, { kind: string; sources?: string[]; combine?: string; on?: number; off?: number }>;
+  buttons?: { gesture: string; target: string; mode: string }[];
+  auto?: Record<string, number>;
+  pause?: { gesture: string; hold_ms: number } | null;
 }
 
 export interface HelmState {
@@ -31,11 +43,12 @@ export interface HelmState {
   progress: Progress | null;
   gestures: { learned: string[]; reliable: string[] };
   notices: string[];
+  mapping?: Mapping; // not in the protocol yet (asked of P1); used when present
 }
 
 export interface FrameMsg {
   type: "frame";
-  jpeg: string; // base64
+  jpeg: string; // base64; empty when there is no picture (mock)
   landmarks: [number, number][] | null;
 }
 
@@ -45,6 +58,22 @@ export interface EventMsg {
   data: Record<string, unknown>;
 }
 
+export interface Trained {
+  name: string;
+  accuracy: number | null;
+}
+
+export interface CoachResult {
+  mapping: Mapping;
+  rationale: string[];
+  changes: string[];
+}
+
+export interface MappingStatus {
+  errors: string[];
+  applied: boolean;
+}
+
 export type ServerMsg = HelmState | FrameMsg | EventMsg;
 
 export type Command =
@@ -52,7 +81,7 @@ export type Command =
   | { cmd: "record_gesture"; name: string }
   | { cmd: "record_negative" }
   | { cmd: "delete_gesture"; name: string }
-  | { cmd: "set_mapping"; mapping: Record<string, unknown> }
+  | { cmd: "set_mapping"; mapping: Mapping }
   | { cmd: "load_profile"; player: string; game: string }
   | { cmd: "save_profile" }
   | { cmd: "pause"; on: boolean }

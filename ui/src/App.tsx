@@ -1,51 +1,158 @@
 // OWNER: P4
-// One page. Bootstrap stub: live state from the socket, placeholder panels (docs/SPEC.md section 9).
-import { useEffect, useRef, useState } from "react";
-import { connect } from "./ws";
-import type { Command, FrameMsg, HelmState } from "./types";
+// One page (docs/SPEC.md section 9). Default layout shows everything; ?overlay=1 is the small window beside the
+// game; ?quick=1 makes calibration a quick one; ?mock=1 runs with no backend.
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CoachResult, Command, EventMsg, Mapping, MappingStatus, Trained } from "./types";
+import { MOCK, useHelmSocket } from "./useHelmSocket";
 import { CameraView } from "./components/CameraView";
 import { CoachPanel } from "./components/CoachPanel";
+import { SipPuffCard, StatTiles, StickCard, ThrottleCard } from "./components/Controls";
 import { Gauges } from "./components/Gauges";
 import { GestureRecorder } from "./components/GestureRecorder";
 import { MappingView } from "./components/MappingView";
-import { StatusBar } from "./components/StatusBar";
+import { StatusBanner, StatusBar } from "./components/StatusBar";
 import { Wizard } from "./components/Wizard";
 
-export default function App() {
-  const [state, setState] = useState<HelmState | null>(null);
-  const [frame, setFrame] = useState<FrameMsg | null>(null);
-  const [online, setOnline] = useState(false);
-  const socket = useRef<{ send(cmd: Command): void } | null>(null);
-  const send = (cmd: Command) => socket.current?.send(cmd);
+const params = new URLSearchParams(location.search);
+const OVERLAY = params.has("overlay");
+const QUICK = params.has("quick");
+const FACE_STEADY_MS = 1000; // a face must be visible this long before calibration starts by itself
+const MAPPING_ACK_MS = 600; // no "error" event within this time means set_mapping was applied
+const TOAST_MS = 6000;
 
-  useEffect(() => {
-    const s = connect((msg) => {
-      if (msg.type === "state") setState(msg);
-      else if (msg.type === "frame") setFrame(msg);
-      // TODO(P4): handle "event" messages (calibration_done, gesture_trained, coach_result, error).
-    }, setOnline);
-    socket.current = s;
-    return () => s.close();
+export default function App() {
+  const [trained, setTrained] = useState<Trained | null>(null);
+  const [coach, setCoach] = useState<CoachResult | null>(null);
+  const [coachBusy, setCoachBusy] = useState(false);
+  const [applied, setApplied] = useState<Mapping | null>(null); // last mapping this page knows was applied
+  const [mappingStatus, setMappingStatus] = useState<MappingStatus>({ errors: [], applied: false });
+  const [toast, setToast] = useState<string | null>(null);
+  const pending = useRef<number | undefined>(undefined); // timer of a set_mapping waiting for error-or-silence
+  const faceSince = useRef<number | null>(null);
+  const autoSent = useRef(false);
+
+  const onEvent = useCallback((msg: EventMsg) => {
+    const data = msg.data;
+    if (msg.name === "gesture_trained") setTrained(data as unknown as Trained);
+    else if (msg.name === "coach_result") {
+      setCoach(data as unknown as CoachResult);
+      setCoachBusy(false);
+    } else if (msg.name === "profile_loaded") {
+      setApplied(null);
+      setCoach(null);
+      setTrained(null);
+      setMappingStatus({ errors: [], applied: false });
+    } else if (msg.name === "error") {
+      const message = String(data.message ?? "Something went wrong");
+      if (data.cmd === "set_mapping") {
+        window.clearTimeout(pending.current);
+        setMappingStatus({ errors: Array.isArray(data.errors) ? data.errors.map(String) : [message], applied: false });
+      } else {
+        setCoachBusy(false);
+        setToast(message);
+      }
+    }
   }, []);
 
-  // TODO(P4): auto-start calibration once a face has been visible for one second (?quick=1 for quick mode).
-  const overlay = new URLSearchParams(location.search).has("overlay");
+  const { state, frame, connection, send: rawSend } = useHelmSocket(onEvent);
 
-  if (!online || !state) return <main className="reconnecting">Reconnecting…</main>;
+  const send = useCallback(
+    (cmd: Command) => {
+      if (cmd.cmd === "coach_build" || cmd.cmd === "coach_review") setCoachBusy(true);
+      rawSend(cmd);
+    },
+    [rawSend],
+  );
 
+  const applyMapping = useCallback(
+    (next: Mapping) => {
+      window.clearTimeout(pending.current);
+      setMappingStatus({ errors: [], applied: false });
+      rawSend({ cmd: "set_mapping", mapping: next });
+      pending.current = window.setTimeout(() => {
+        setApplied(next);
+        setMappingStatus({ errors: [], applied: true });
+      }, MAPPING_ACK_MS);
+    },
+    [rawSend],
+  );
+
+  useEffect(() => {
+    if (connection === "open") return;
+    autoSent.current = false; // a restarted server may have no calibration again
+    faceSince.current = null;
+    setCoachBusy(false);
+  }, [connection]);
+
+  // First calibration starts by itself once a face has been visible for a second. The overlay window never
+  // starts it, so two open windows do not both send the command.
+  useEffect(() => {
+    if (!state || OVERLAY || autoSent.current || connection !== "open") return;
+    if (!state.face || state.profile.calibrated || state.progress) {
+      faceSince.current = null;
+      return;
+    }
+    const now = performance.now();
+    faceSince.current ??= now;
+    if (now - faceSince.current >= FACE_STEADY_MS) {
+      autoSent.current = true;
+      send({ cmd: "calibrate", mode: QUICK ? "quick" : "full" });
+    }
+  }, [state, connection, send]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), TOAST_MS);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  const offline = connection !== "open";
+  const lost = (
+    <div className="lost" role="alert">
+      <h2>Can’t reach Helm</h2>
+      <p>
+        Make sure <code>python -m helm</code> is running. This page keeps trying{MOCK ? "" : " and will reconnect by itself"}.
+      </p>
+    </div>
+  );
+  if (!state) return <main className="page">{offline && connection === "closed" ? lost : <p className="starting">Starting Helm…</p>}</main>;
+
+  const mapping = state.mapping ?? applied;
+  const busy = state.progress !== null;
   return (
-    <main className={overlay ? "app overlay" : "app"}>
-      <StatusBar state={state} />
-      {state.progress && <Wizard progress={state.progress} />}
-      <CameraView frame={frame} />
-      <Gauges state={state} />
-      {!overlay && (
-        <>
-          <GestureRecorder state={state} send={send} />
-          <MappingView state={state} send={send} />
-          <CoachPanel state={state} send={send} />
-        </>
+    <>
+      <main className={`page${OVERLAY ? " compact" : ""}${offline ? " dimmed" : ""}`} aria-hidden={offline}>
+        <StatusBar state={state} connection={connection} send={send} mode={QUICK ? "quick" : "full"} compact={OVERLAY} />
+        <StatusBanner state={state} />
+        {state.progress && <Wizard progress={state.progress} />}
+        <div className="columns">
+          <div className="col left">
+            <CameraView frame={frame} state={state} compact={OVERLAY} />
+            {!OVERLAY && <StatTiles state={state} />}
+          </div>
+          <div className="col right">
+            <Gauges state={state} mapping={mapping} />
+            <div className="pair">
+              <StickCard state={state} mapping={mapping} />
+              <ThrottleCard state={state} mapping={mapping} />
+            </div>
+            <SipPuffCard state={state} mapping={mapping} />
+          </div>
+        </div>
+        {!OVERLAY && (
+          <div className="tools">
+            <GestureRecorder state={state} send={send} trained={trained} busy={busy} />
+            <MappingView mapping={mapping} status={mappingStatus} apply={applyMapping} send={send} />
+            <CoachPanel state={state} send={send} result={coach} busy={coachBusy} apply={applyMapping} />
+          </div>
+        )}
+      </main>
+      {offline && lost}
+      {toast && (
+        <button className="toast" role="alert" onClick={() => setToast(null)}>
+          {toast}
+        </button>
       )}
-    </main>
+    </>
   );
 }

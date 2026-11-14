@@ -1,0 +1,36 @@
+/* OWNER: P4 */
+/* Design tokens: "calm assistive". Swap --accent to re-theme. */
+
+:root {
+  --bg: #f6f4ef;
+  --card: #ffffff;
+  --border: #e4e0d8;
+  --text: #1c2026;
+  --muted: #5a6170; /* 4.5:1 or better on --bg and --card */
+  --track: #ece8e0;
+  --idle: #a9bbea;
+  --tick-off: #a4a9b3;
+
+  --accent: #2457e6;
+  --accent-ink: #ffffff;
+
+  --ok: #1e6b3a;
+  --ok-bg: #dff2e5;
+  --warn: #6b4a00;
+  --warn-bg: #fff4e0;
+  --off: #5a6170;
+  --off-bg: #e9e6df;
+
+  --camera: #23272e;
+  --camera-ink: #c9ced6;
+  --mesh: #5eead4;
+
+  --radius: 24px;
+  --radius-inner: 16px;
+  --radius-control: 14px;
+  --gap: 24px;
+  --pad: 24px;
+  --shadow: 0 1px 2px rgba(28, 32, 38, 0.04);
+
+  --font: "Atkinson Hyperlegible", system-ui, sans-serif;
+}
