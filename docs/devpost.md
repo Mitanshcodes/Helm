@@ -40,8 +40,8 @@ Helm turns a regular webcam into a full Xbox 360 controller.
 - **It keeps adapting.** If a gesture weakens as you tire, Helm lowers its threshold and tells you.
 
 Helm appears to Windows as a real controller, so it works with any game that accepts one, with no
-mods. Closing your eyes for one second pauses it. Everything runs on the laptop: video never
-leaves it and nothing is recorded.
+mods. Closing your eyes for one second pauses it. Everything runs on the laptop: video stays local
+and is saved only when dev mode is explicitly enabled for debugging.
 
 ## How we built it
 
@@ -51,7 +51,8 @@ One Python process and a React dashboard.
   expression scores per frame.
 - **Signal:** each player's neutral pose and range are removed and scaled, then smoothed with a One Euro filter.
 - **Gestures:** thresholds with hysteresis, minimum hold and a refractory period, plus a
-  k-nearest-neighbour classifier (scikit-learn) with a "none" class for learned gestures.
+  personalized logistic classifier (scikit-learn) with feature selection, a "none" class, distance
+  rejection and temporal confirmation for learned gestures.
 - **Output:** a virtual Xbox 360 controller through vgamepad and ViGEmBus, with keyboard emulation as a fallback.
 - **Breath:** an ESP32 streams raw pressure over USB serial; all thresholds live on the laptop, per player.
 - **Coach:** a LangChain deepagents agent with four tools (read the game's controls, read the
@@ -59,8 +60,8 @@ One Python process and a React dashboard.
 - **Dashboard:** FastAPI WebSocket to React, Vite and TypeScript. It runs calibration with no
   clicks and shows every input as it fires.
 
-Threads hand off through "latest value" slots, never queues, so a slow consumer drops stale frames
-instead of adding lag. Every frame is timestamped at capture, after inference and after the
+Control stages hand off through "latest value" slots, so a slow consumer drops stale frames
+instead of adding lag. Optional dev recording uses a bounded background queue. Every frame is timestamped at capture, after inference and after the
 controller write, so latency is measured rather than estimated.
 
 ## Challenges we ran into

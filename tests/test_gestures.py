@@ -1,5 +1,6 @@
 # OWNER: P3
-"""gestures.py: synthetic clusters separate, "none" suppresses, steering does not hide a gesture, save/load."""
+"""Enrollment, rejection, time-qualified learned gestures, and profile compatibility."""
+import itertools
 import numpy as np
 import pytest
 
@@ -12,6 +13,7 @@ from helm.profiles import default_mapping
 YAW = N_BLEND                                      # index of yaw in the 56-value delta
 B = {name: i for i, name in enumerate(BLENDSHAPE_NAMES)}
 rng = np.random.default_rng(0)
+ticks = itertools.count()
 
 
 def frames(n: int, noise: float = 0.02, yaw: float = 0.0, **blend: float) -> np.ndarray:
@@ -43,8 +45,10 @@ def trained() -> GestureModel:
     return m
 
 
-def signals(delta: np.ndarray, face: bool = True, expr: np.ndarray | None = None) -> Signals:
-    return Signals(seq=0, t_capture_ns=0, t_infer_ns=0, face=face, axes={"yaw": 0.0, "pitch": 0.0, "roll": 0.0},
+def signals(delta: np.ndarray, face: bool = True, expr: np.ndarray | None = None,
+            t_s: float | None = None) -> Signals:
+    t_ns = round((next(ticks) / 30 if t_s is None else t_s) * 1e9)
+    return Signals(seq=0, t_capture_ns=t_ns, t_infer_ns=t_ns, face=face, axes={"yaw": 0.0, "pitch": 0.0, "roll": 0.0},
                    expr=np.zeros(N_BLEND, np.float32) if expr is None else expr, delta=delta, breath=0.0)
 
 
@@ -90,14 +94,14 @@ def test_none_suppresses_and_face_loss_resets():
     m.fit()
     engine = GestureEngine(None, {"left_smirk": {"kind": "learned"}}, m)
     smirk = frames(1, mouthSmileLeft=0.6)[0]
-    for _ in range(config.LEARNED_SMOOTH_FRAMES):
+    for _ in range(5):
         level = engine.update(signals(smirk))["left_smirk"]
     assert level > 0.9
-    for _ in range(config.LEARNED_SMOOTH_FRAMES // 2):                  # a few neutral frames: P(none) >= 0.3
+    for _ in range(5):
         level = engine.update(signals(frames(1)[0]))["left_smirk"]
     assert level == 0.0
     assert engine.update(signals(smirk, face=False))["left_smirk"] == 0.0
-    assert engine.update(signals(smirk))["left_smirk"] > 0.9            # no stale history after the loss
+    assert engine.update(signals(smirk))["left_smirk"] == 0.0           # a new full hold is required
 
 
 def test_engine_blendshape_combine_and_breath():

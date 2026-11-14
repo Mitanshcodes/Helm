@@ -117,3 +117,8 @@ python eval/analysis.py
 Prints every headline number with its participant count and baseline, writes `latency.png`,
 `false_triggers.png`, `throughput.png` and `headline.json` to `eval/results/`, and prints the lines to paste
 into `ui/src/results.ts`. Anything not run yet is reported as "not measured". Never put an estimate on a slide.
+
+
+## Local model integration
+
+See `eval/LEARNED_GESTURES.md`. The normalized replay tool is `eval/learned_replay.py`; the upstream raw-recording evaluator is retained.

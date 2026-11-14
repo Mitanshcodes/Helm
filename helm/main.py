@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from helm import coach, config, profiles
+from helm.dev_recording import DevRecording
 from helm.adapt import FatigueTracker
 from helm.calibration import Calibrator, default_calibration
 from helm.capture import Camera
@@ -170,6 +171,12 @@ class Runtime:
         self._requests: list[tuple[str, tuple]] = []
         self._events: list[dict] = []
         self._preview: tuple[np.ndarray, np.ndarray | None] | None = None
+        self._dev_enabled = getattr(args, 'dev', False)
+        self._dev_session = None
+        self._dev_sessions = []
+        self._dev_fit_threads = []
+        self._dev_end_after_frame = False
+        self._video_frame = None
         self._snapshot = self._build_snapshot(None, None, {}, ControlState(), None)
 
         self._stop = threading.Event()
@@ -203,6 +210,13 @@ class Runtime:
                 close()
             except Exception:
                 log.exception("error while stopping")
+        if self._dev_session:
+            self._dev_session.finish('shutdown')
+            self._dev_session = None
+        for worker in self._dev_fit_threads:
+            worker.join()
+        for recording in self._dev_sessions:
+            recording.wait()
         snap = self._snapshot
         log.info("stopped after %d frames, %.1f fps, median total latency %.2f ms",
                  self._frames, snap["fps"], snap["latency_ms"]["total"])
@@ -306,7 +320,7 @@ class Runtime:
         with self._lock:
             self._events.append({"type": "event", "name": name, "data": data})
 
-    def _worker(self, fn, *args) -> None:
+    def _worker(self, fn, *args):
         """Run slow work (disk, coach) off the pipeline thread. Failures become "error" events."""
         def run() -> None:
             try:
@@ -315,7 +329,9 @@ class Runtime:
                 log.exception("worker failed")
                 self._event("error", {"message": f"{type(e).__name__}: {e}"})
 
-        threading.Thread(target=run, daemon=True).start()
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        return worker
 
     def _learned(self) -> list[str]:
         return self._model.names if self._model else []
@@ -346,9 +362,10 @@ class Runtime:
             if f is None:                          # replay ended
                 self._finished.set()
                 self._stop.set()
-            elif self._draw_preview:
+            elif self._draw_preview or self._dev_enabled:
                 try:
-                    self._preview = (render_preview(f), None)
+                    self._video_frame = render_preview(f)
+                    self._preview = (self._video_frame, None)
                 except Exception:                  # e.g. no cv2: the dashboard shows its placeholder instead
                     self._draw_preview = False
                     log.exception("mock preview disabled")
@@ -359,6 +376,7 @@ class Runtime:
         bgr, t_capture_ns, seq = got
         self._last_seq = seq
         f = self._tracker.process(bgr, t_capture_ns, seq)
+        self._video_frame = bgr
         self._preview = (bgr, f.landmarks)
         return f
 
@@ -373,6 +391,9 @@ class Runtime:
             progress = self._calibrator.feed(f, t_s)
             if progress.done:
                 self._calib = self._calibrator.result()
+                if self._dev_session:
+                    self._dev_session.calibration(self._calib)
+                    self._dev_end_after_frame = self._dev_session.kind == 'calibration'
                 notes = self._calibrator.notes
                 self._calibrator = None
                 self._normalizer.set_calibration(self._calib)
@@ -413,6 +434,18 @@ class Runtime:
         self._vision_ms.append((f.t_infer_ns - f.t_capture_ns) / 1e6)
         self._control_ms.append((t_output_ns - f.t_infer_ns) / 1e6)
         self._total_ms.append((t_output_ns - f.t_capture_ns) / 1e6)
+        if self._dev_session:
+            video = self._video_frame
+            if video is None:
+                video = render_preview(f)
+            scores = self._model.predict(s.delta) if self._model else {'none': 1.0}
+            if not self._dev_session.submit(video, f, s, act, scores, out, progress):
+                self._event('error', {'message': self._dev_session.error or 'Dev recording stopped'})
+                self._dev_end_after_frame = True
+            if self._dev_end_after_frame:
+                self._dev_session.finish('completed')
+                self._dev_session = None
+                self._dev_end_after_frame = False
         self._snapshot = self._build_snapshot(f, s, act, out, progress)
 
     def _handle_requests(self) -> None:
@@ -421,11 +454,55 @@ class Runtime:
         for kind, args in requests:
             getattr(self, "_do_" + kind)(*args)
 
+    def set_dev_mode(self, on: bool) -> None:
+        self._request('dev_mode', on)
+
+    def set_dev_recording(self, on: bool) -> None:
+        self._request('dev_recording', on)
+
+    def _do_dev_mode(self, on: bool) -> None:
+        if not on and self._dev_session:
+            self._dev_session.finish('dev_mode_disabled')
+            self._dev_session = None
+        self._dev_enabled = on
+        if on and self._calibrator:
+            self._do_calibrate(self._calibrator.mode)
+        elif on and self._take_recorder:
+            self._start_dev_capture('gesture' if self._take_recorder.name else 'negative', self._take_recorder.name)
+
+    def _do_dev_recording(self, on: bool) -> None:
+        if not self._dev_enabled:
+            raise ValueError('Enable dev mode before recording a dataset')
+        if on:
+            if self._dev_session:
+                raise ValueError('A dev recording is already active')
+            self._start_dev_capture('manual')
+        elif self._dev_session and self._dev_session.kind == 'manual':
+            self._dev_session.finish('manual_stop')
+            self._dev_session = None
+
+    def _start_dev_capture(self, kind: str, label: str | None = None) -> None:
+        if not self._dev_enabled:
+            return
+        if self._dev_session and self._dev_session.kind == 'manual':
+            return
+        if self._dev_session:
+            self._dev_session.finish('replaced')
+        self._dev_end_after_frame = False
+        self._dev_session = DevRecording(getattr(self.args, 'dev_dir', 'artifacts/dev-datasets'), kind,
+                                         self.player, self.game, self._calib or default_calibration(self.player),
+                                         self._model.copy() if self._model else GestureModel(), self._mapping,
+                                         source='mock' if self.args.mock else 'replay' if self.args.replay else 'camera',
+                                         label=label)
+        self._dev_sessions.append(self._dev_session)
+
     def _do_calibrate(self, mode: str) -> None:
+        self._start_dev_capture('calibration')
         self._take_recorder = None
         self._calibrator = Calibrator(self.player, mode)
 
     def _do_record(self, name: str | None) -> None:
+        self._start_dev_capture('gesture' if name else 'negative', name)
         self._calibrator = None
         self._take_recorder = TakeRecorder(name)
 
@@ -441,6 +518,9 @@ class Runtime:
         self._rebuild_gestures()
 
     def _do_apply_profile(self, player: str, game: str, calib, mapping: dict, model) -> None:
+        if self._dev_session:
+            self._dev_session.finish('profile_changed')
+            self._dev_session = None
         self.player, self.game = player, game
         self._calib, self._mapping, self._model = calib, mapping, model
         self._normalizer = Normalizer(calib)
@@ -461,6 +541,8 @@ class Runtime:
 
     def _finish_recording(self) -> None:
         recorder, self._take_recorder = self._take_recorder, None
+        if self._dev_session and self._dev_session.kind in ('gesture', 'negative'):
+            self._dev_end_after_frame = True
         model = self._model.copy() if self._model else GestureModel()
         for frames in recorder.result():
             if recorder.name is None:
@@ -490,14 +572,29 @@ class Runtime:
         self._rebuild_gestures()
         path = profiles.gesture_model_path(self.player)
 
-        def fit_and_save() -> None:
-            accuracy = model.fit()
-            if self._model is model:               # a newer recording or profile replaced it: keep that one
-                model.save(path)
-            if then:
-                then(accuracy)
+        dev_session = self._dev_session if self._dev_enabled else None
+        dev_version = dev_session.model_update_started() if dev_session else None
 
-        self._worker(fit_and_save)
+        def fit_and_save() -> None:
+            error = None
+            try:
+                accuracy = model.fit()
+                if self._model is model:           # a newer recording or profile replaced it: keep that one
+                    model.save(path)
+                if dev_session:
+                    dev_session.save_model(model, dev_version)
+                if then:
+                    then(accuracy)
+            except Exception as e:
+                error = e
+                raise
+            finally:
+                if dev_session:
+                    dev_session.model_update_finished(error)
+
+        worker = self._worker(fit_and_save)
+        if dev_session:
+            self._dev_fit_threads.append(worker)
 
     def _rebuild_gestures(self) -> None:
         defs = self._mapping.get("gestures", {})
@@ -616,6 +713,8 @@ class Runtime:
             "mapping": self._mapping,
             "expressions": {n: float(f.blend[_BLEND_INDEX[n]]) if f and f.face else 0.0 for n in config.WATCH_EXPRESSIONS},
             "catalog": self._gesture_catalog(),
+            "dev": {"enabled": self._dev_enabled, "recording": self._dev_session is not None,
+                    "session": self._dev_sessions[-1].status() if self._dev_sessions else None},
         }
 
 
@@ -624,6 +723,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     source = p.add_mutually_exclusive_group()
     source.add_argument("--mock", action="store_true", help="synthetic face data instead of the camera")
     source.add_argument("--replay", metavar="PATH", help="replay a recorded .npz instead of the camera")
+    p.add_argument('--dev', action='store_true', help='Save calibration/enrollment video and enable debug datasets')
+    p.add_argument('--dev-dir', default='artifacts/dev-datasets', help='Local development dataset directory')
     p.add_argument("--record", metavar="PATH", help="save FrameFeatures to a .npz while running")
     p.add_argument("--output", choices=("auto", "vgamepad", "keyboard", "null"), default="auto")
     p.add_argument("--player", default="guest", metavar="NAME")

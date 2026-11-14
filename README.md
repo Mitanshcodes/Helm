@@ -27,8 +27,9 @@ Built at HackPrinceton Fall '26 by a team of four.
    proposes a mapping. After a session it can review what happened and suggest changes.
 5. **Play.** Close your eyes for one second to pause or resume.
 
-Everything runs on the laptop. Video never leaves it and is never saved; only numbers (head pose,
-expression scores) move between modules. The coach sees a game name, gesture names and numbers,
+Everything runs on the laptop. Video stays on the laptop and is saved only when dev mode is
+explicitly enabled. During ordinary play, only numbers (head pose, expression scores) move between
+modules. The coach sees a game name, gesture names and numbers,
 never an image, and falls back to a built-in mapping when there is no network.
 
 ## Setup
@@ -54,6 +55,7 @@ python -m helm --player sam --game SuperTuxKart
 python -m helm --mock --output null             # no camera, no gamepad: works on any laptop
 python -m helm --record run.npz                 # save face features (no images) while running
 python -m helm --replay run.npz                 # replay a saved run instead of the camera
+python -m helm --dev                            # save calibration/enrollment video; enable debug recording
 ```
 
 Create the virtual controller (start Helm) before launching the game, or the game may not see it.
@@ -76,6 +78,17 @@ keep the page silent until it has been clicked once, so click anywhere on the da
 
 For dashboard development, `cd ui && npm run dev` serves it on `http://localhost:5173` with live
 reload, talking to a running `python -m helm` (or to nothing, with `?mock=1`).
+
+### Dev datasets
+
+Enable **Dev mode** in the dashboard or launch with `--dev` before calibrating or teaching gestures.
+Calibration and enrollment are recorded automatically, with matching `calibration.json` and
+`gestures.npz` files. **Record debug dataset** starts a separate video with frame-aligned raw
+features, model scores, gesture activations and controller output. Stop it with **Stop recording**.
+
+Datasets go to `artifacts/dev-datasets/` (ignored by Git); use `--dev-dir /path/to/datasets` to
+choose another directory. See [the dev recording guide](docs/DEV_MODE.md) for the file format,
+timestamps and completion checks.
 
 ### Windows game overlay
 
@@ -138,8 +151,8 @@ Coach agent -> worker thread, on request; never on the pipeline thread
   slow consumer drops stale data instead of building lag.
 - **Face tracking** is MediaPipe Face Landmarker: head pose plus 52 expression scores per frame.
 - **Normalizer** removes your neutral pose, scales to your calibrated range, and smooths with a One Euro filter.
-- **Gestures** are expression thresholds with hysteresis, plus a k-nearest-neighbour classifier
-  for learned gestures with a "none" class.
+- **Gestures** are expression thresholds with hysteresis, plus a personalized logistic classifier
+  for learned gestures with a "none" class and temporal confirmation.
 - **Mapper** turns signals into stick, trigger and button states. If the face is lost, or
   calibration or recording is active, the controller goes neutral.
 - **Output** is `vgamepad` over ViGEmBus, with keyboard emulation as the fallback.

@@ -93,11 +93,14 @@ class Mapper:
             # A breath event is level 1.0 for exactly one tick, so the usual minimum hold would
             # mean it never activates at all. Discrete events need no debounce: the detector in
             # sipnpuff.py already qualified the press over 80 ms before emitting.
-            min_hold = 0 if defn.get("kind") == "breath" else config.TRIGGER_MIN_HOLD_MS
+            # Learned levels already passed P3's time-based confirmation and release gate. Repeating
+            # that hold here both adds latency and can drop a correctly qualified brief gesture.
+            qualified = defn.get("kind") in ("breath", "learned")
+            min_hold = 0 if qualified else config.TRIGGER_MIN_HOLD_MS
             self._buttons.append((name, target, Trigger(
                 on=defn.get("on", config.TRIGGER_ON),
                 off=defn.get("off", config.TRIGGER_OFF),
-                min_hold_ms=defn.get("min_hold_ms", min_hold),
+                min_hold_ms=0 if defn.get("kind") == "learned" else defn.get("min_hold_ms", min_hold),
                 mode=entry.get("mode", "tap"),
             )))
 

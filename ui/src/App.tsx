@@ -8,6 +8,7 @@ import { useFireClicks, useSetting, useSpokenPrompts } from "./feedback";
 import { JUDGE, ProfileCard } from "./components/ProfileCard";
 import { useTeachFlow } from "./teach";
 import { CameraView } from "./components/CameraView";
+import { DevControls } from "./components/DevControls";
 import { CoachPanel } from "./components/CoachPanel";
 import { OutputCard, SipPuffCard, StatTiles } from "./components/Controls";
 import { Gauges } from "./components/Gauges";
@@ -176,6 +177,7 @@ export default function App() {
           onTeach={teach.flow ? undefined : teach.offer}
         />
         <StatusBanner state={state} />
+        {!OVERLAY && <DevControls state={state} send={send} />}
         {state.progress ? (
           <Wizard progress={state.progress} flow={teach.flow} />
         ) : (

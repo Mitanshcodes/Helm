@@ -1,0 +1,62 @@
+{
+  "artifact_scope": "Historical study integration against upstream f8016b3; not a current checkout test report",
+  "upstream_commit": "f8016b3",
+  "backend": "regularized_logistic_regression_selected_facial_features_with_distance_rejection",
+  "research_score_parity": [
+    {
+      "subject": "A",
+      "max_absolute_score_difference": 3.3306690738754696e-16,
+      "features": 8
+    },
+    {
+      "subject": "B",
+      "max_absolute_score_difference": 2.208152793947704e-08,
+      "features": 8
+    },
+    {
+      "subject": "C",
+      "max_absolute_score_difference": 1.8318679906315083e-15,
+      "features": 9
+    }
+  ],
+  "frozen_random_negative_replay": {
+    "frames": 1679,
+    "face_frames": 1668,
+    "duration_s": 55.96666666666666,
+    "false_events": 5,
+    "false_per_minute": 5.360333531864206,
+    "events": [
+      {
+        "time_s": 2.966666666666667,
+        "gesture": "mouth_right_named"
+      },
+      {
+        "time_s": 3.433333333333333,
+        "gesture": "brow_raise"
+      },
+      {
+        "time_s": 7.866666666666666,
+        "gesture": "mouth_left_named"
+      },
+      {
+        "time_s": 47.5,
+        "gesture": "brow_raise"
+      },
+      {
+        "time_s": 49.53333333333333,
+        "gesture": "mouth_left_named"
+      }
+    ],
+    "assumption": "Entire input recording contains no intended commands"
+  },
+  "checks": {
+    "tests_passed": 338,
+    "tests_skipped": 1,
+    "skip_reason": "optional deepagents not installed",
+    "mock_null_seconds": 3,
+    "mock_null_exit": 0,
+    "save_load_predictions_match": true,
+    "private_research_profiles_outside_repository": true
+  },
+  "limitations": "Five false commands remain on the new negative clip. This is not a reliability fix; fresh-session and live-device tests are required."
+}

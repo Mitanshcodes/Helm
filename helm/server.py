@@ -74,7 +74,11 @@ def handle_command(runtime: "Runtime", text: str) -> dict | None:
         return value if isinstance(value, str) and pattern.match(value) else None
 
     try:
-        if cmd == "calibrate":
+        if cmd in ('set_dev_mode', 'set_dev_recording'):
+            if not isinstance(msg.get('on'), bool):
+                return _error('Dev command needs on: true or false', cmd=cmd)
+            getattr(runtime, cmd)(msg['on'])
+        elif cmd == "calibrate":
             if msg.get("mode") not in ("full", "quick"):
                 return _error('calibrate needs "mode": "full" or "quick"', cmd=cmd)
             runtime.start_calibration(msg["mode"])

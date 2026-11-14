@@ -4,6 +4,10 @@ How to use this file: read section 5 (contracts) and the subsection of section 6
 you are editing. Read other sections only when your task touches them. Numbers marked "start
 value" are meant to be tuned on the demo laptop and then stored in `helm/config.py`.
 
+Implementation updates: learned gestures now use the personalized logistic classifier described in
+[eval/LEARNED_GESTURES.md](../eval/LEARNED_GESTURES.md), superseding the k-NN design below.
+Opt-in video and signal recording is documented in [DEV_MODE.md](DEV_MODE.md).
+
 Contents: 1 Product and judging · 2 Priorities · 3 Architecture · 4 Repo tree and owners ·
 5 Contracts · 6 Modules · 7 Files on disk · 8 WebSocket protocol · 9 Dashboard · 10 Sip-and-puff
 hardware · 11 Coach agent · 12 Evaluation · 13 Demo profiles · 14 Bootstrap and lane plans ·

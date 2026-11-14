@@ -114,9 +114,23 @@ SERIAL_LIVE_GAP_MS = 3.0           # a readline that waited this long means the 
 SERIAL_LIVE_STREAK = 5             # this many live reads in a row ends the drain
 
 # ------------------------------------------------------------------ P3: learning and evaluation
-KNN_NEIGHBORS = 7
-KNN_POSE_WEIGHT = 0.3              # head pose counts less than the face, so a gesture made while steering still counts
-NEGATIVE_CHUNKS = 5                # negatives are split this many ways for leave-one-out accuracy
+LEARNED_C = 0.1
+LEARNED_FEATURES_PER_CLASS = 4
+LEARNED_SCALE_FLOOR = 0.05
+LEARNED_NOISE_FLOOR = 0.03
+LEARNED_FRAMES_PER_TAKE = 7
+LEARNED_NEGATIVE_RATIO = 3
+LEARNED_RADIUS_PERCENTILE = 95
+LEARNED_RADIUS_EXPANSION = 1.5
+LEARNED_RADIUS_MIN = 0.5
+LEARNED_RADIUS_SEPARATION = 0.35
+LEARNED_REJECT_FACTOR = 1.5
+LEARNED_MAX_ITER = 2000
+LEARNED_ON = 0.65
+LEARNED_OFF = 0.45
+LEARNED_CONFIRM_S = 2.0 / 30.0
+LEARNED_RELEASE_S = 2.0 / 30.0
+LEARNED_MAX_GAP_S = 0.2
 TAKES = 5
 TAKE_READY_S = 3.0                 # "get ready": long enough to hear the spoken prompt; also the face baseline
 TAKE_HOLD_S = 1.5                  # seconds of the move actually held that a take records
@@ -127,8 +141,6 @@ TAKE_RELAX_S = 2.5
 TAKE_TOP_FRACTION = 0.6            # share of frames kept as positives when a take timed out
 NEGATIVE_S = 15.0
 MIN_TAKE_OUT_ACCURACY = 0.85
-LEARNED_SMOOTH_FRAMES = 4
-NONE_SUPPRESS = 0.3                # learned activation is 0 when P("none") reaches this
 
 FATIGUE_WINDOW_S = 120.0
 FATIGUE_BASELINE_S = 60.0

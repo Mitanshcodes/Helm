@@ -29,3 +29,12 @@ context.md
 architecture.md
 decisions.md
 HARDWARE_PLAN.md
+
+# local study workspace
+.direnv/
+.ipynb_checkpoints/
+result
+result-*
+
+# Local opt-in camera/debug datasets
+artifacts/dev-datasets/

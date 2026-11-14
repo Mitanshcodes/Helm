@@ -26,6 +26,9 @@ export interface Mapping {
 }
 
 export interface HelmState {
+  dev?: { enabled: boolean; recording: boolean; session: null | {
+    path: string; kind: string; frames: number; saving: boolean; error: string | null;
+  } };
   type: "state";
   fps: number;
   latency_ms: { vision: number; control: number; total: number };
@@ -92,6 +95,8 @@ export interface MappingStatus {
 export type ServerMsg = HelmState | FrameMsg | EventMsg;
 
 export type Command =
+  | { cmd: "set_dev_mode"; on: boolean }
+  | { cmd: "set_dev_recording"; on: boolean }
   | { cmd: "calibrate"; mode: CalibrationMode }
   | { cmd: "record_gesture"; name: string }
   | { cmd: "record_negative" }

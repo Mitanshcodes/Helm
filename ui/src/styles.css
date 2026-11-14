@@ -1659,3 +1659,7 @@ code {
 .teach-result .put-on {
   margin-top: 14px;
 }
+/* Opt-in local development recording. */
+.dev-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; }
+.dev-controls label { display: flex; align-items: center; gap: 6px; }
+.dev-controls small { flex-basis: 100%; overflow-wrap: anywhere; }

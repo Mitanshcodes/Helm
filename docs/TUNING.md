@@ -23,7 +23,8 @@ level = (score - neutral) / (peak - neutral)        clipped to 0..1
 
 ## Use a named player
 
-Calibrations for `guest` and `judge` are never saved, so there is no file to edit. Start with a name:
+Calibrations for `guest` and `judge` are not saved to their profiles. Dev mode saves a separate
+calibration copy in its dataset; see [DEV_MODE.md](DEV_MODE.md). For an editable saved profile, start with a name:
 
 ```
 python -m helm --player mitansh
