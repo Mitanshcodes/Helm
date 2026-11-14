@@ -466,7 +466,10 @@ def test_breath_calibrator_reports_progress_and_finishes():
     sip = SipPuff(None)
     cal = BreathCalibrator(sip)
     _, elapsed = walk(cal, sip, sip_mv=2400.0, puff_mv=900.0)
-    assert cal.done and elapsed < 12.0
+    # Budget, not a magic number: the three steps plus a frame of slack. It exists to catch the
+    # flow silently growing into something a stranger will not sit through.
+    budget = config.CALIB_BREATH_REST_S + 2 * config.CALIB_BREATH_STEP_S + 0.5
+    assert cal.done and elapsed < budget
     final = cal.feed(elapsed)
     assert final.done and final.overall == 1.0 and not final.active
 

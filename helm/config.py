@@ -106,7 +106,11 @@ BREATH_MAX_PUFF_MV = 1000.0
 BREATH_MAX_SIP_MV = 1800.0
 # Per-player breath calibration (BreathCalibrator). One prompted sip and one prompted puff.
 CALIB_BREATH_REST_S = 1.5          # settle, so the rolling baseline is clean before the first peak
-CALIB_BREATH_STEP_S = 4.0          # per direction; long enough for a slow lung, short enough to sit through
+# Per direction. 4.0 was too short in practice: a spoken prompt takes about 3 s to read out, so
+# the player heard the instruction with a second left and their breath landed in the NEXT step's
+# window -- a bench run recorded a sip during the puff step for exactly this reason. The window has
+# to outlast the prompt, however the prompt is delivered.
+CALIB_BREATH_STEP_S = 6.0
 # Full scale is this fraction of the single measured peak, NOT the peak itself. A player's best
 # effort is not their typical effort: the bench rig measured one person's puff at 2410, 1024 and
 # 1078 mV across three tries. Scaling to the peak would leave an ordinary puff below BREATH_HARD
