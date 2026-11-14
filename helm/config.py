@@ -58,6 +58,8 @@ WATCH_EXPRESSIONS = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRigh
 CROSSTALK_RATIO = 0.8              # a mapped gesture is held back while another one (no shared blendshape) is stronger
                                    # than it by this factor, measured as level / on: smiling also lifts jawOpen a bit
 EXPRESSION_MIN_HOLD_MS = 100       # face expressions the coach maps must stay past `on` this long (talking twitches)
+BREATH_LEVEL_ON = 0.3              # live breath gestures (breath_puff, breath_sip): press past this share of the
+BREATH_LEVEL_OFF = 0.15            # player's breath range, release below this (rest noise is ~0.04)
 PROFILE_WATCH_S = 1.0              # how often hand edits to profiles/<player>/*.json are picked up
 FIRED_HOLD_MS = 150                # a fire stays in the state message this long, so 30 Hz states never miss it
 COACH_TIMEOUT_S = 60

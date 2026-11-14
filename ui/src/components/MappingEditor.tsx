@@ -11,7 +11,7 @@ import type { Catalog, Mapping, MappingStatus, Send } from "../types";
 const GROUPS: [string, string][] = [
   ["face", "Face"],
   ["learned", "Your moves"],
-  ["breath", "Breath"],
+  ["breath", "Breath · live ones press while you blow, the others once you stop"],
 ];
 const HEAD: [string, string][] = [
   ["", "Nothing"],
@@ -48,14 +48,14 @@ function GesturePicker(props: { value: string; catalog?: Catalog; allowAlways: b
   );
 }
 
-function ModePicker(props: { value: Mode; trigger: boolean; disabled: boolean; label: string; onChange: (m: Mode) => void }) {
-  const { value, trigger, disabled, label, onChange } = props;
+function ModePicker(props: { value: Mode; trigger: boolean; event: boolean; disabled: boolean; label: string; onChange: (m: Mode) => void }) {
+  const { value, trigger, event, disabled, label, onChange } = props;
   return (
     <select className="mode" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value as Mode)} aria-label={label}>
       <option value="tap">Tap</option>
-      <option value="hold">Hold</option>
+      {!event && <option value="hold">Hold</option>}
       <option value="toggle">On / off</option>
-      {trigger && <option value="analog">Analog</option>}
+      {trigger && !event && <option value="analog">Analog</option>}
     </select>
   );
 }
@@ -67,6 +67,9 @@ function Row(props: { target: string; draft: Mapping; catalog?: Catalog; setDraf
   const action = catalog?.controls?.[target];
   const name = targetLabel(target);
   const badge = ["A", "B", "X", "Y"].includes(target) ? target : null;
+  // A breath event (soft/hard sip or puff) fires once, when the breath ends: it can be tapped or toggled, not held.
+  const kindOf = (g: string) => draft.gestures?.[g]?.kind ?? catalog?.gestures.find((c) => c.name === g)?.definition.kind;
+  const event = kindOf(b.gesture) === "breath";
   return (
     <div className={b.gesture ? "map-row" : "map-row empty"}>
       <div className="map-target">
@@ -78,11 +81,16 @@ function Row(props: { target: string; draft: Mapping; catalog?: Catalog; setDraf
         catalog={catalog}
         allowAlways={trigger}
         label={`Gesture for ${name}`}
-        onChange={(g) => setDraft(setBinding(draft, target, g, b.gesture ? b.mode : trigger ? "hold" : "tap", catalog))}
+        onChange={(g) => {
+          const mode: Mode = kindOf(g) === "breath" ? (trigger ? "toggle" : "tap")
+            : b.gesture && kindOf(b.gesture) !== "breath" ? b.mode : trigger ? (g.startsWith("breath_") ? "analog" : "hold") : "tap";
+          setDraft(setBinding(draft, target, g, mode, catalog));
+        }}
       />
       <ModePicker
         value={b.mode}
         trigger={trigger}
+        event={event}
         disabled={!b.gesture || b.gesture === ALWAYS}
         label={`How ${name} is pressed`}
         onChange={(mode) => setDraft(setBinding(draft, target, b.gesture, mode, catalog))}
@@ -162,7 +170,7 @@ export function MappingEditor(props: { mapping: Mapping; catalog?: Catalog; stat
             {sensitivity.map(([name, g]) => (
               <label key={name} className="slider">
                 <span>{gestureLabel(catalog, name)}</span>
-                <input type="range" min={0.3} max={0.95} step={0.05} value={g.on} onChange={(e) => setDraft(setThreshold(draft, name, Number(e.target.value)))} />
+                <input type="range" min={g.kind === "breath_level" ? 0.1 : 0.3} max={0.95} step={0.05} value={g.on} onChange={(e) => setDraft(setThreshold(draft, name, Number(e.target.value)))} />
                 <b>{Math.round((g.on ?? 0) * 100)}%</b>
                 {g.kind === "blendshape" && name !== pause?.gesture ? (
                   <select className="mode" value={g.min_hold_ms ?? 60} aria-label={`Hold time for ${gestureLabel(catalog, name)}`}

@@ -38,7 +38,8 @@ export interface HelmState {
   profile: { player: string; game: string; calibrated: CalibrationMode | "default" | null };
   raw: Record<Axis, number>;
   axes: Record<Axis, number>;
-  breath: number;
+  breath: number; // -1..1 of the player's measured range: + puff, - sip
+  breath_marks?: { soft: number; hard: number }; // where a breath counts as soft and as hard
   activations: Record<string, number>;
   thresholds: Record<string, { on: number; off: number }>;
   control: { lx: number; ly: number; rx: number; ry: number; lt: number; rt: number; buttons: string[] };

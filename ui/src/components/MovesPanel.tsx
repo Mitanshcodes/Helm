@@ -5,7 +5,7 @@
 import { forwardRef } from "react";
 import { TAKES_LABEL } from "../teach";
 import type { MoveRow } from "../moves";
-import { keyText, moveName } from "../moves";
+import { isBreath, keyText, moveName } from "../moves";
 import type { HelmState, Mapping } from "../types";
 import { ControllerView, usedInputs } from "./ControllerView";
 import { FaceIcon } from "./PixelIcon";
@@ -62,6 +62,28 @@ function Card({ row, index }: { row: MoveRow; index: number }) {
   );
 }
 
+/** Live breath from the sip-and-puff sensor: sip fills left of the middle, puff right, with soft and hard notches. */
+function BreathStrip({ breath, marks }: { breath: number; marks: { soft: number; hard: number } }) {
+  const v = Math.max(-1, Math.min(1, breath));
+  const a = Math.abs(v);
+  const pct = Math.round(a * 100);
+  const words = a < marks.soft / 2 ? "resting" : `${v > 0 ? "puff" : "sip"} ${pct}%${a >= marks.hard ? " · hard" : a >= marks.soft ? " · soft" : ""}`;
+  return (
+    <span className="breath-strip" role="img" aria-label={`Breath ${words}`}>
+      <span className="breath-end">sip</span>
+      <span className="breath-bar">
+        <span className="fill" style={v < 0 ? { left: `${50 + v * 50}%`, width: `${a * 50}%` } : { left: "50%", width: `${a * 50}%` }} />
+        {[-marks.hard, -marks.soft, marks.soft, marks.hard].map((x) => (
+          <i key={x} className={Math.abs(x) === marks.hard ? "tick hard" : "tick"} style={{ left: `${50 + x * 50}%` }} />
+        ))}
+        <i className="mid" />
+      </span>
+      <span className="breath-end">puff</span>
+      <b className="breath-words">{words}</b>
+    </span>
+  );
+}
+
 export const MovesPanel = forwardRef<HTMLHeadingElement, {
   state: HelmState;
   rows: MoveRow[];
@@ -69,6 +91,8 @@ export const MovesPanel = forwardRef<HTMLHeadingElement, {
   teachBusy: boolean;
   onMeasureBreath: () => void;
 }>(function MovesPanel({ state, rows, onTeach, teachBusy, onMeasureBreath }, heading) {
+  const mapping = state.mapping;
+  const usesBreath = [...(mapping?.buttons ?? []).map((b) => b.gesture), ...(mapping?.triggers ?? []).map((t) => t.source)].some(isBreath);
   return (
     <>
       <div className="section-head">
@@ -77,11 +101,13 @@ export const MovesPanel = forwardRef<HTMLHeadingElement, {
         </h2>
         <p className="note">
           Solid notch fires · hollow notch lets go
+          {state.breath_connected && <BreathStrip breath={state.breath ?? 0} marks={state.breath_marks ?? { soft: 0.25, hard: 0.65 }} />}
           {state.breath_connected && (
             <button className="btn small" disabled={teachBusy} onClick={onMeasureBreath} title="Measures how hard you can sip and puff">
               Measure my breath
             </button>
           )}
+          {!state.breath_connected && usesBreath && <span className="breath-off">Breath sensor not connected · plug it in, Helm finds it in a few seconds</span>}
         </p>
       </div>
       <ul className="moves" role="list" aria-label="Your moves and the buttons they press">

@@ -58,12 +58,14 @@ Mapping format (JSON):
  "axes": [{"source": "yaw"|"pitch"|"roll", "target": "lx"|"ly"|"rx"|"ry", "deadzone": 0.08, "curve": 1.5, "invert": false}],
  "triggers": [{"source": "<gesture name>"|"breath_puff"|"breath_sip", "target": "lt"|"rt", "lo": 0.15, "hi": 0.85}],
  "gestures": {"<name>": {"kind": "blendshape", "sources": ["<blendshape>", ...], "combine": "max"|"min", "on": 0.6, "off": 0.4}
-              | {"kind": "learned", "on": 0.7, "off": 0.5} | {"kind": "breath"}},
+              | {"kind": "learned", "on": 0.7, "off": 0.5} | {"kind": "breath"} | {"kind": "breath_level", "on": 0.3, "off": 0.15}},
  "buttons": [{"gesture": "<name>", "target": "<button or lt/rt>", "mode": "tap"|"hold"|"toggle"}],
  "auto": {"rt": 1.0},
  "pause": {"gesture": "<name>", "hold_ms": 2000}}
 A learned gesture's name must be one of the player's learned gestures. A breath gesture's name is one of \
-soft_sip, hard_sip, soft_puff, hard_puff and needs a breath sensor. Keep the pause gesture as eyes closed \
+soft_sip, hard_sip, soft_puff, hard_puff and needs a breath sensor: it fires once, when the breath ends, so use \
+it for "tap" or "toggle". A "breath_level" gesture is named breath_puff or breath_sip: it is pressed for as long \
+as the player blows (or sips) past "on", so use it for "hold" actions such as brake or drift. Keep the pause gesture as eyes closed \
 (eyeBlinkLeft + eyeBlinkRight, combine "min", on 0.85, off 0.6) held 2000 ms unless the report says the eyes are unreliable. \
 "on" must be greater than "off", both in (0, 1)."""
 
@@ -171,9 +173,14 @@ def _own_errors(m: dict, calib: Calibration, learned: list[str], has_breath: boo
                 errors.append(f"breath gesture {name!r} must be one of {list(BREATH_EVENTS)}")
             if not has_breath:
                 errors.append(f"gesture {name!r} needs the breath sensor, which is not connected")
+        elif kind == "breath_level":
+            if name not in _BREATH_SOURCES:
+                errors.append(f"live breath gesture {name!r} must be one of {list(_BREATH_SOURCES)}")
+            if not has_breath:
+                errors.append(f"gesture {name!r} needs the breath sensor, which is not connected")
         else:
             errors.append(f"gesture {name!r} has unknown kind {kind!r}")
-        if isinstance(g, dict) and kind in ("blendshape", "learned"):
+        if isinstance(g, dict) and kind in ("blendshape", "learned", "breath_level"):
             on, off = g.get("on"), g.get("off")
             if not (isinstance(on, (int, float)) and isinstance(off, (int, float)) and 0 < off < on < 1):
                 errors.append(f"gesture {name!r}: need 0 < off < on < 1, got on={on} off={off}")
@@ -240,6 +247,8 @@ def _offline(game: str, calib: Calibration, learned: list[str], has_breath: bool
             return name in learned
         if kind == "breath":
             return has_breath and name in BREATH_EVENTS
+        if kind == "breath_level":
+            return has_breath and name in _BREATH_SOURCES
         return False
 
     m["gestures"] = gestures = {n: g for n, g in gestures.items() if usable(g, n)}
@@ -268,6 +277,11 @@ _EXPRESSIONS = (
     ("pucker", ("mouthPucker",), 0.6, 0.4, "pucker your lips"),
     ("cheek_puff", ("cheekPuff",), 0.6, 0.4, "puff your cheeks"),
 )
+
+
+def breath_level_gesture() -> dict:
+    """A live breath gesture (breath_puff or breath_sip): its level is the pressure, 0..1 of the player's range."""
+    return {"kind": "breath_level", "on": config.BREATH_LEVEL_ON, "off": config.BREATH_LEVEL_OFF}
 
 
 def expression_gesture(sources: tuple[str, ...], on: float, off: float) -> dict:
@@ -309,6 +323,8 @@ def _candidates(calib: Calibration, learned: list[str], has_breath: bool) -> lis
     face = sorted((e for e in _EXPRESSIONS if set(e[1]) <= usable), key=lambda e: -strength(e[1]))
     out += [(n, expression_gesture(srcs, on, off), words) for n, srcs, on, off, words in face]
     if has_breath:
+        out += [("breath_puff", breath_level_gesture(), "puff into the tube"),
+                ("breath_sip", breath_level_gesture(), "sip on the tube")]
         out += [(n, {"kind": "breath"}, n.replace("_", " ")) for n in ("hard_puff", "hard_sip", "soft_puff", "soft_sip")]
     return out
 
@@ -326,8 +342,10 @@ def gesture_catalog(calib: Calibration, learned: list[str], has_breath: bool, ga
     gestures += [{"name": n, "label": n.replace("_", " ").capitalize(), "group": "learned", "usable": True,
                   "definition": {"kind": "learned", "on": 0.7, "off": 0.5}} for n in learned]
     if has_breath:
-        gestures += [{"name": n, "label": n.replace("_", " ").capitalize(), "group": "breath", "usable": True,
-                      "definition": {"kind": "breath"}} for n in BREATH_EVENTS]
+        gestures += [{"name": n, "label": label, "group": "breath", "usable": True, "definition": breath_level_gesture()}
+                     for n, label in (("breath_puff", "Puff (live)"), ("breath_sip", "Sip (live)"))]
+        gestures += [{"name": n, "label": n.replace("_", " ").capitalize() + " (when you stop)",
+                      "group": "breath", "usable": True, "definition": {"kind": "breath"}} for n in BREATH_EVENTS]
     controls = {a["target"]: a["name"] for a in game_controls(game).get("actions", [])
                 if isinstance(a, dict) and "target" in a}
     return {"gestures": gestures, "controls": controls}
@@ -365,11 +383,15 @@ def _fill(m: dict, game: str, calib: Calibration, learned: list[str], has_breath
     for target in missing:
         if not pool:
             break
-        name, definition, _ = pool.pop(0)
+        held = actions.get(target, {}).get("kind") == "held"
+        # A breath event lasts one tick and cannot be held: a held action takes the next gesture that can be,
+        # and only if none is left gets an event, as a tap.
+        pick = next((i for i, (_, d, _) in enumerate(pool) if not held or d["kind"] != "breath"), 0)
+        name, definition, _ = pool.pop(pick)
         if gestures.get(name, {}).get("kind") != definition["kind"]:
             gestures[name] = definition
-        held = actions.get(target, {}).get("kind") == "held"
-        buttons.append({"gesture": name, "target": target, "mode": "hold" if held else "tap"})
+        mode = "hold" if held and definition["kind"] != "breath" else "tap"
+        buttons.append({"gesture": name, "target": target, "mode": mode})
     driven = ({b.get("target") for b in buttons} | {t.get("target") for t in m.get("triggers", [])}
               | set(m.get("auto") or {}))
     rt = actions.get("rt")

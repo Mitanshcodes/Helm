@@ -66,7 +66,8 @@ export function setBinding(m: Mapping, target: string, gesture: string, mode: Mo
     next.auto = { ...(next.auto ?? {}), [target]: 1.0 };
   } else if (gesture) {
     ensureGesture(next, gesture, catalog);
-    if (mode === "analog" && isTrigger(target) && !gesture.startsWith("breath_")) {
+    // Analog follows the gesture's level. A breath event (soft/hard sip or puff) is a single tick: never analog.
+    if (mode === "analog" && isTrigger(target) && next.gestures?.[gesture]?.kind !== "breath") {
       next.triggers.push({ source: gesture, target, lo: 0.15, hi: 0.85 });
     } else {
       next.buttons.push({ gesture, target, mode: mode === "analog" ? "hold" : mode });

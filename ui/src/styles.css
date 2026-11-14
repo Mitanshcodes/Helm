@@ -1791,3 +1791,62 @@ input[type="range"] {
     transition: none !important;
   }
 }
+
+/* ---------------------------------------------------------------- live breath strip (moves header) */
+
+.breath-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.breath-bar {
+  position: relative;
+  display: inline-block;
+  width: 200px;
+  height: 18px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+}
+
+.breath-bar .fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: radial-gradient(circle, var(--pink) 1.7px, transparent 2px) 0 0 / 6px 6px;
+}
+
+.breath-bar .tick {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+  opacity: 0.45;
+}
+
+.breath-bar .tick.hard {
+  top: -6px;
+  bottom: -6px;
+  opacity: 1;
+}
+
+.breath-bar .mid {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: 50%;
+  width: 4px;
+  margin-left: -2px;
+  background: var(--ink);
+}
+
+.breath-words {
+  min-width: 108px;
+}
+
+.breath-off {
+  font-weight: 400;
+}

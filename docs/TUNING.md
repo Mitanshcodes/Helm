@@ -98,6 +98,59 @@ the dashboard shows it. Change `blend_peak` only when even `on` 0.9 is too easy,
 | Steering too twitchy | `range.yaw` up | `curve` 2.0 to 2.5 |
 | Gestures get easier to trigger the longer you play | Fatigue adaptation lowers thresholds after the first minute | `FATIGUE_MIN_SCALE = 1.0` in `helm/config.py` turns it off (P3's setting: tell P3) |
 
+## Sip-and-puff
+
+### How breath is measured
+
+1. **Arduino.** The board reads the pressure sensor about 70 times a second and sends
+   `P,<millis>,<millivolts>`. About 2400 mV means no breath; a sip pulls it down and a puff pushes it up.
+2. **Baseline.** On connect, Helm takes the median of the first 2 s as the resting value. While nobody is
+   breathing into the tube, it keeps following slow drift.
+3. **Level.** Each sample becomes a signed level from -1 to 1:
+   `(millivolts - baseline) / max_puff_mv` for a puff, or `/ max_sip_mv` for a sip.
+   - The sign is the direction. The size is the strength: 0.5 is half of a firm breath, and 1.0 is a firm
+     breath or harder.
+   - `max_puff_mv` and `max_sip_mv` are half of your strongest breath in "Measure my breath", or the defaults
+     1000 and 1800.
+4. **Events.** Separately, each breath is classified when it ends:
+   - It must last at least 80 ms.
+   - Its peak decides the strength: under 0.65 is soft, 0.65 or more is hard.
+   - So you get one of `soft_puff`, `hard_puff`, `soft_sip`, `hard_sip`.
+
+### What you can map (Mapping tab, "Breath" group, shown once the sensor is connected)
+
+| Pick | What it does | Good for |
+|---|---|---|
+| **Puff (live)** / **Sip (live)** | Level-based. Presses as soon as the breath passes `on` (30% by default) and stays pressed while you keep breathing. On LT or RT with **Analog**, the trigger follows the breath strength: a gentle sip is a light brake. | Brake, accelerate, drift: anything held or analog. |
+| **Hard puff (when you stop)**, etc. | Fires once, about 200 ms after the breath ends, knowing whether it was soft or hard. Offered only as **Tap** or **On / off**. | Separate soft and hard actions; a latched throttle (On / off). |
+
+A live breath gesture cannot tell soft from hard: a hard puff passes through every lower level on the way
+up. To get two actions from one direction, use the "when you stop" events.
+
+### Checking it on the dashboard
+
+- **Breath strip:** once the board is connected, a sip/puff strip appears in the "your moves → the buttons"
+  header, next to "Measure my breath".
+  - Sip fills left of the middle and puff fills right, with ticks at soft (25%) and hard (65%).
+  - It also shows the strength in words, for example "puff 51% · soft".
+- **Move cards:** every breath input that is mapped gets one, showing its strength against its notches. It
+  turns pink ("FIRING!") while it presses.
+- **Not connected:** if the mapping uses breath but no board is found, the header says "Breath sensor not
+  connected". Helm checks the ports every second.
+- **"Measure my breath"** sets `max_puff_mv` and `max_sip_mv` for this player. It also runs by itself
+  after a face calibration when the board is connected.
+
+### Tuning breath
+
+- **The live gestures' `on` slider** in the Mapping tab goes down to 10%. Lower it if you have to blow too
+  hard; raise it if breathing or talking sets it off.
+- **`profiles/<player>/breath.json`:** `{"max_puff_mv": 1000, "max_sip_mv": 1800}`. Lower a value to make
+  that direction reach 100% with less effort. It is applied live, like the other files.
+- **`helm/config.py`:**
+  - `BREATH_SOFT` 0.25 and `BREATH_HARD` 0.65: where the events count as soft and hard.
+  - `BREATH_LEVEL_ON` 0.3 and `BREATH_LEVEL_OFF` 0.15: defaults for the live gestures.
+  - `BREATH_MIN_PRESS_MS` 80.
+
 ## Numbers in `helm/config.py` (restart Helm after changing)
 
 | Name | Default | What it does |

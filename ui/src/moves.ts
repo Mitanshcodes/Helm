@@ -35,7 +35,12 @@ export const keyText = (target: string) => KEY[target] ?? target.toUpperCase();
 export const keySpoken = (target: string) => KEY_SPOKEN[target] ?? `${keyText(target)} button`;
 
 const HEAD: Record<string, [string, IconName]> = { yaw: ["Turn head", "turn"], pitch: ["Nod head", "nod"], roll: ["Tilt head", "tilt"] };
+// Breath: the soft/hard events fire once when a breath ends; breath_puff/breath_sip are live (level = strength).
 const BREATH = new Set(["hard_puff", "soft_puff", "soft_sip", "hard_sip"]);
+const LIVE_BREATH = new Set(["breath_puff", "breath_sip"]);
+export const isBreath = (name: string) => BREATH.has(name) || LIVE_BREATH.has(name);
+/** Strength of a breath input right now, 0..1: puff for *_puff, sip for *_sip. */
+const breathLevel = (name: string, breath: number) => Math.max(0, (name.endsWith("puff") ? 1 : -1) * breath);
 
 export function moveName(name: string, catalog?: Catalog): string {
   if (name === "eyes_closed") return "Close eyes";
@@ -46,7 +51,7 @@ export function iconFor(name: string, mapping: Mapping | null, learned: string[]
   const def = mapping?.gestures?.[name];
   const sources = (def?.sources ?? []).join(" ");
   if (def?.kind === "learned" || learned.includes(name)) return "star";
-  if (BREATH.has(name) || def?.kind === "breath") return "breath";
+  if (isBreath(name) || def?.kind === "breath" || def?.kind === "breath_level") return "breath";
   const text = `${name} ${sources}`;
   if (/brow/i.test(text)) return "brow";
   if (/smile/i.test(text)) return "smile";
@@ -89,10 +94,9 @@ export function buildRows(state: HelmState, mapping: Mapping | null, pauseHeld: 
   }
 
   for (const b of mapping?.buttons ?? []) {
-    if (BREATH.has(b.gesture) && !state.breath_connected) continue;
+    if (isBreath(b.gesture) && !state.breath_connected) continue;
     used.add(b.gesture);
-    const breath = BREATH.has(b.gesture);
-    const lv = breath ? Math.max(0, (b.gesture.endsWith("puff") ? 1 : -1) * (state.breath ?? 0)) : level(b.gesture);
+    const lv = isBreath(b.gesture) ? breathLevel(b.gesture, state.breath ?? 0) : level(b.gesture);
     rows.push({
       id: `btn-${b.gesture}-${b.target}`, name: moveName(b.gesture, state.catalog), icon: iconFor(b.gesture, mapping, learned),
       key: keyText(b.target), keyLabel: keySpoken(b.target), kind: "button", level: lv, on: state.thresholds?.[b.gesture]?.on,
@@ -102,11 +106,13 @@ export function buildRows(state: HelmState, mapping: Mapping | null, pauseHeld: 
   }
 
   for (const t of mapping?.triggers ?? []) {
+    if (isBreath(t.source) && !state.breath_connected) continue;
     used.add(t.source);
     const out = t.target === "lt" ? state.control.lt : state.control.rt;
+    const lv = isBreath(t.source) ? breathLevel(t.source, state.breath ?? 0) : level(t.source);
     rows.push({
       id: `trig-${t.target}`, name: moveName(t.source, state.catalog), icon: iconFor(t.source, mapping, learned),
-      key: keyText(t.target), keyLabel: keySpoken(t.target), kind: "trigger", level: level(t.source), measure: "output",
+      key: keyText(t.target), keyLabel: keySpoken(t.target), kind: "trigger", level: lv, measure: "output",
       value: `${Math.round(out * 100)}%`, mode: "ANALOG", firing: live && out > 0.05,
     });
   }

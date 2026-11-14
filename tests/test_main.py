@@ -12,7 +12,7 @@ from helm.main import Runtime, parse_args
 from helm.profiles import default_mapping
 
 STATE_KEYS = {"type", "fps", "latency_ms", "face", "paused", "breath_connected", "profile", "raw", "axes",
-              "breath", "activations", "thresholds", "control", "fired", "progress", "gestures", "notices", "mapping", "expressions", "catalog", "dev"}
+              "breath", "activations", "thresholds", "control", "fired", "progress", "gestures", "notices", "mapping", "expressions", "catalog", "dev", "breath_marks"}
 
 
 def _run(runtime: Runtime, until, timeout: float = 3.0) -> None:
@@ -194,3 +194,83 @@ def test_hand_edits_to_profile_files_are_applied(monkeypatch, tmp_path):
     touch(folder / "SuperTuxKart.json", json.dumps(edited))
     rt._check_profile_files(seen)
     assert rt._requests == [] and "thresholds must satisfy" in rt.pop_events()[0]["data"]["message"]
+
+
+class _FakeBreath:
+    """A connected sensor whose level the test sets; events are queued for one poll."""
+
+    def __init__(self, *_):
+        self.level, self.connected, self.events = 0.0, True, []
+        self.scales = (config.BREATH_MAX_PUFF_MV, config.BREATH_MAX_SIP_MV)
+
+    def start(self): pass
+    def stop(self): pass
+
+    def calibrate(self, puff, sip):
+        self.scales = (puff, sip)
+
+    def poll(self):
+        events, self.events = self.events, []
+        return events
+
+
+def test_live_breath_presses_while_blowing_and_drives_analog_triggers(monkeypatch):
+    import helm.main as main_mod
+    from helm import coach
+    from helm.contracts import FrameFeatures
+    monkeypatch.setattr(main_mod, "SipPuff", _FakeBreath)
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
+    mapping = default_mapping("SuperTuxKart")
+    mapping["gestures"]["breath_puff"] = coach.breath_level_gesture()
+    mapping["gestures"]["breath_sip"] = coach.breath_level_gesture()
+    mapping["buttons"].append({"gesture": "breath_puff", "target": "RB", "mode": "hold"})
+    mapping["triggers"] = [{"source": "breath_sip", "target": "lt", "lo": 0.15, "hi": 0.85}]
+    assert rt.set_mapping(mapping) == []
+    rt._handle_requests()
+    names = {g["name"] for g in rt._gesture_catalog()["gestures"] if g["group"] == "breath"}
+    assert {"breath_puff", "breath_sip", "hard_puff"} <= names
+
+    def step(i, breath):
+        rt._sip.level = breath
+        ns = int(i * 1e9 / 30)
+        rt._step(FrameFeatures(seq=i, t_capture_ns=ns, t_infer_ns=ns, face=True))
+        return rt.snapshot()
+
+    for i in range(10):
+        snap = step(i, 0.02)                                    # rest noise: nothing
+    assert "RB" not in snap["control"]["buttons"] and snap["control"]["lt"] == 0.0
+    for i in range(10, 20):
+        snap = step(i, 0.6)                                     # blowing: RB held down while it lasts
+    assert "RB" in snap["control"]["buttons"] and snap["activations"]["breath_puff"] == pytest.approx(0.6)
+    snap = step(20, 0.05)
+    assert "RB" not in snap["control"]["buttons"]               # released as soon as the breath stops
+    snap = step(21, -0.5)                                       # sipping half: brake in proportion
+    assert snap["control"]["lt"] == pytest.approx((0.5 - 0.15) / 0.7) and snap["activations"]["breath_sip"] == 0.5
+    assert snap["breath_marks"] == {"soft": config.BREATH_SOFT, "hard": config.BREATH_HARD}
+
+
+def test_coach_never_holds_a_breath_event():
+    from helm import coach
+    from helm.calibration import default_calibration
+    calib = default_calibration("sam", mode="full")              # only the eyes: breath is all there is
+    m = coach.offline_mapping("SuperTuxKart", calib, [], True)
+    kinds = {b["target"]: (m["gestures"][b["gesture"]]["kind"], b["mode"]) for b in m["buttons"]}
+    assert all(not (kind == "breath" and mode == "hold") for kind, mode in kinds.values())
+    assert coach.check(m, calib, [], True) == []
+
+
+def test_hand_edited_breath_range_is_applied(monkeypatch, tmp_path):
+    import helm.main as main_mod
+    monkeypatch.setattr(main_mod, "SipPuff", _FakeBreath)
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    profiles.save_breath("sam", 900.0, 1500.0)
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server", "--player", "sam"]))
+    assert rt._sip.scales == (900.0, 1500.0)                     # loaded at startup
+    seen: dict = {}
+    rt._check_profile_files(seen)
+    path = tmp_path / "sam" / "breath.json"
+    path.write_text(json.dumps({"max_puff_mv": 600.0, "max_sip_mv": 1200.0}))
+    seen[path] -= 1
+    rt._check_profile_files(seen)
+    assert rt._sip.scales == (600.0, 1200.0)
+    assert [e["data"]["what"] for e in rt.pop_events()] == ["breath"]

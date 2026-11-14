@@ -10,13 +10,14 @@ const trigger = (value: number) => Math.max(0, axis(value));
 
 export const NEUTRAL_CONTROL: Control = { lx: 0, ly: 0, rx: 0, ry: 0, lt: 0, rt: 0, buttons: [] };
 
-const BREATH = new Set(["hard_puff", "soft_puff", "soft_sip", "hard_sip"]);
+// Breath inputs: the soft/hard events and the live ones (breath_puff, breath_sip: level, hold and analog).
+const BREATH = new Set(["hard_puff", "soft_puff", "soft_sip", "hard_sip", "breath_puff", "breath_sip"]);
 
 /** Every pad input the mapping drives: button names, "lt"/"rt", and "LS"/"RS" for stick axes. */
 export function usedInputs(mapping: Mapping | null | undefined, breathConnected: boolean): Set<string> {
   const used = new Set<string>();
   for (const b of mapping?.buttons ?? []) if (!BREATH.has(b.gesture) || breathConnected) used.add(b.target);
-  for (const t of mapping?.triggers ?? []) used.add(t.target);
+  for (const t of mapping?.triggers ?? []) if (!BREATH.has(t.source) || breathConnected) used.add(t.target);
   for (const [t, v] of Object.entries(mapping?.auto ?? {})) if (v) used.add(t);
   for (const a of mapping?.axes ?? []) used.add(a.target.startsWith("l") ? "LS" : "RS");
   return used;

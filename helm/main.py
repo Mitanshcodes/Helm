@@ -38,6 +38,9 @@ _BLEND_INDEX = {name: i for i, name in enumerate(BLENDSHAPE_NAMES)}
 coach._games()                                     # read games.json now, not later on the pipeline thread
 
 
+BREATH_LEVEL_SIGN = {"breath_puff": 1.0, "breath_sip": -1.0}   # live breath gestures: + puff, - sip
+
+
 def hold_back_crosstalk(act: dict[str, float], competitors: dict[str, tuple[float, frozenset[str]]]) -> dict[str, float]:
     """Hold a mapped gesture at 0 while another mapped gesture that shares none of its blendshapes is stronger than
     it by CROSSTALK_RATIO, both measured as level / on. A smile also lifts jawOpen, a wide-open mouth lifts the
@@ -151,6 +154,7 @@ class Runtime:
         self._gestures: GestureEngine
         self._thresholds: dict[str, dict[str, float]] = {}
         self._competitors: dict[str, tuple[float, frozenset[str]]] = {}
+        self._breath_levels: dict[str, float] = {}
         self._rebuild_gestures()
 
         # Pipeline-thread state.
@@ -441,7 +445,10 @@ class Runtime:
                 self._finish_recording()
                 progress = None
 
-        act = hold_back_crosstalk(self._gestures.update(s), self._competitors)
+        act = self._gestures.update(s)
+        for name, sign in self._breath_levels.items():    # live breath: how hard, 0..1 of the player's range
+            act[name] = max(0.0, sign * s.breath)
+        act = hold_back_crosstalk(act, self._competitors)
         scales = self._fatigue.update(act, t_s)
         state = self._mapper.update(s, act, self._sip.poll(), scales)
         self._last_idle = self._mapper.idle
@@ -657,6 +664,10 @@ class Runtime:
             for name, g in defs.items()
             if name in used and name != pause and g.get("kind") in ("blendshape", "learned")
             and isinstance(g.get("on"), (int, float)) and g["on"] > 0}
+        # Live breath gestures ("breath_level"): their level is the pressure itself, so they press as soon as the
+        # breath passes `on` (no wait for the release, unlike the soft/hard events) and work with hold and analog.
+        self._breath_levels = {name: BREATH_LEVEL_SIGN[name] for name, g in defs.items()
+                               if g.get("kind") == "breath_level" and name in BREATH_LEVEL_SIGN}
         self._catalog_key = None                   # the editor's gesture list is rebuilt on the next snapshot
 
     def _watch_profiles(self) -> None:
@@ -676,7 +687,8 @@ class Runtime:
 
     def _check_profile_files(self, seen: dict) -> None:
         folder = Path(profiles.gesture_model_path(self.player)).parent
-        for kind, path in (("calibration", folder / "calibration.json"), ("mapping", folder / f"{self.game}.json")):
+        for kind, path in (("calibration", folder / "calibration.json"), ("mapping", folder / f"{self.game}.json"),
+                           ("breath", folder / "breath.json")):
             try:
                 mtime = path.stat().st_mtime_ns
             except OSError:
@@ -690,7 +702,17 @@ class Runtime:
             except (OSError, ValueError) as e:
                 self._event("error", {"message": f"{path.name} was not applied, it does not read as JSON: {e}"})
                 continue
-            if kind == "calibration":
+            if kind == "breath":
+                scales = profiles.load_breath(self.player)
+                if scales is None:
+                    if self.player not in profiles.SHARED_PLAYERS:
+                        self._event("error", {"message": f"{path.name} was not applied: it needs max_puff_mv and "
+                                                         "max_sip_mv, both positive numbers"})
+                    continue
+                if tuple(scales) == tuple(self._sip.scales):
+                    continue
+                self._sip.calibrate(*scales)       # thread-safe: the sensor applies it under its own lock
+            elif kind == "calibration":
                 calib = profiles.load_calibration(self.player)
                 if calib is None:
                     if self.player not in profiles.SHARED_PLAYERS:
@@ -750,6 +772,7 @@ class Runtime:
             "raw": {a: float(getattr(f, a)) if f else 0.0 for a in AXES},
             "axes": {a: float(s.axes[a]) if s else 0.0 for a in AXES},
             "breath": float(s.breath) if s else 0.0,
+            "breath_marks": {"soft": config.BREATH_SOFT, "hard": config.BREATH_HARD},
             "activations": {name: float(level) for name, level in act.items()},
             "thresholds": self._thresholds,
             "control": {"lx": out.lx, "ly": out.ly, "rx": out.rx, "ry": out.ry, "lt": out.lt, "rt": out.rt,
