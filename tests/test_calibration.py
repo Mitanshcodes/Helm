@@ -53,8 +53,8 @@ class Player:
             pitch += self.up
         elif step == "pitch_down":
             pitch -= self.down
-        name = {"brow_raise": "browInnerUp", "jaw_open": "jawOpen", "smile_left": "mouthSmileLeft",
-                "smile_right": "mouthSmileRight", "pucker": "mouthPucker"}.get(step)
+        name = {"brow_raise": "browInnerUp", "jaw_open": "jawOpen", "smile": "mouthSmileLeft",
+                "pucker": "mouthPucker"}.get(step)
         if name:
             amp = 0.1 if name in self.weak else 0.7
             blend[BLENDSHAPE_NAMES.index(name)] += amp * max(0.0, math.sin(2 * math.pi * t_in_step * 0.75))
@@ -81,7 +81,7 @@ def test_full_calibration_measures_the_player():
     progs, t = run(cal, Player())
     steps = [p.step for p in progs if p.active]
     assert list(dict.fromkeys(steps)) == ["neutral", "yaw_left", "yaw_right", "pitch_up", "pitch_down",
-                                          "brow_raise", "jaw_open", "smile_left", "smile_right", "pucker"]
+                                          "brow_raise", "jaw_open", "smile", "pucker"]
     assert t < 45
     overall = [p.overall for p in progs]
     assert overall == sorted(overall) and progs[-1].overall == 1.0

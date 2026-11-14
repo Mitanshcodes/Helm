@@ -141,43 +141,61 @@ def test_remove_and_save_load_round_trip(tmp_path):
     assert loaded.names == ["left_smirk"] and "pucker" not in loaded.predict(frames(1)[0])
 
 
-def _run_recorder(rec: TakeRecorder, delta_at, fps: float = 30.0, lose_face=None) -> list[Progress]:
-    progs, t = [], 0.0
+def _run_recorder(rec: TakeRecorder, delta_at, fps: float = 30.0, lose_face=None, limit_s: float = 120.0):
+    """delta_at(t_in_step, step) -> delta. Returns every Progress."""
+    progs, t, step, step_t0 = [], 0.0, None, 0.0
     while True:
         face = not (lose_face and lose_face[0] <= t < lose_face[1])
-        p = rec.feed(signals(delta_at(t, progs[-1] if progs else None), face=face), t)
+        p = rec.feed(signals(delta_at(t - step_t0, step), face=face), t)
         progs.append(p)
         if p.done:
             return progs
+        if p.step != step:
+            step, step_t0 = p.step, t
         t += 1 / fps
-        assert t < 60
+        assert t < limit_s
 
 
-def test_take_recorder_keeps_the_held_frames():
-    rec = TakeRecorder("left_smirk", takes=5)
-    take_s = config.TAKE_READY_S + config.TAKE_HOLD_S + config.TAKE_RELAX_S
+def test_take_recorder_waits_for_a_slow_move_and_keeps_it_held():
+    """Like calibration: the move is recorded once it is actually made, however long the player takes to react."""
+    rec = TakeRecorder("left_smirk", takes=3)
+    react_s = config.TAKE_NUDGE_S + 0.5                                  # slow enough to be nudged
 
-    def delta(t, _):                               # smirks a bit late and ramps up during the hold window
-        phase = t % take_s - config.TAKE_READY_S
-        level = 0.6 * min(1.0, max(0.0, (phase - 0.2) / 0.3)) if 0.0 <= phase < config.TAKE_HOLD_S else 0.0
-        return frames(1, noise=0.0, mouthSmileLeft=level)[0]
+    def delta(t_in_step, step):
+        if step and step.endswith("_go"):
+            level = 0.6 * min(1.0, max(0.0, (t_in_step - react_s) / 0.3))   # starts late, ramps up
+            blink = 0.9 if 0.5 < t_in_step < 0.7 else 0.0                     # a blink is not the move
+            return frames(1, noise=0.0, mouthSmileLeft=level, eyeBlinkLeft=blink, eyeBlinkRight=blink)[0]
+        return frames(1, noise=0.0)[0]
 
     progs = _run_recorder(rec, delta)
-    assert [s for s in dict.fromkeys(p.step for p in progs if p.active)] == [f"take_{k}" for k in range(1, 6)]
-    assert "now" in progs[40].prompt and len(progs) / 30.0 == pytest.approx(5 * take_s, abs=0.2)
+    steps = list(dict.fromkeys(p.step for p in progs if p.active))
+    assert steps == [f"take_{k}_{phase}" for k in (1, 2, 3) for phase in ("ready", "go", "relax")]
+    go = [p for p in progs if p.step == "take_1_go"]
+    assert "now, and hold" in go[0].prompt and any("bigger" in p.prompt for p in go)
+    assert go[5].progress == 0.0                                         # the ring waits for the move
+    assert len(go) / 30.0 == pytest.approx(react_s + config.TAKE_HOLD_S, abs=0.4)
     takes = rec.result()
-    assert len(takes) == 5 and len(rec.rest) == 5
+    assert len(takes) == 3 and len(rec.rest) == 3
     for take in takes:
-        assert take.shape[1] == FEATURE_DIM
-        assert len(take) == pytest.approx(config.TAKE_TOP_FRACTION * 30 * config.TAKE_HOLD_S, abs=2)
-        assert take[:, B["mouthSmileLeft"]].min() > 0.2                 # the slow start was dropped
-    assert all(np.abs(rest).max() == 0.0 for rest in rec.rest)          # relaxed face only
+        assert len(take) == pytest.approx(30 * config.TAKE_HOLD_S, abs=2)
+        assert take[:, B["mouthSmileLeft"]].min() > 0.2                   # only frames of the move itself
+    assert all(np.abs(rest).max() == 0.0 for rest in rec.rest)
+
+
+def test_take_that_never_moves_times_out_with_the_strongest_frames():
+    rec = TakeRecorder("tiny_move", takes=1)
+    progs = _run_recorder(rec, lambda t, step: frames(1, noise=0.0, mouthPucker=0.05 * (step or "").endswith("_go"))[0])
+    go = [p for p in progs if p.step == "take_1_go"]
+    assert len(go) / 30.0 == pytest.approx(config.TAKE_GO_TIMEOUT_S, abs=0.1)
+    (take,) = rec.result()
+    assert len(take) == pytest.approx(config.TAKE_TOP_FRACTION * 30 * config.TAKE_GO_TIMEOUT_S, abs=2)
 
 
 def test_negatives_recorder_and_face_loss():
     rec = TakeRecorder(None)
-    progs = _run_recorder(rec, lambda t, _: talking(1)[0], lose_face=(2.0, 3.0))
-    assert {p.step for p in progs if p.active} == {"negatives"}
+    progs = _run_recorder(rec, lambda t, step: talking(1)[0], lose_face=(2.0, 3.0))
+    assert {p.step for p in progs if p.active} == {"read_aloud"}
     assert any("can't see" in p.prompt for p in progs)
     (negatives,) = rec.result()
     assert len(negatives) == pytest.approx(30 * config.NEGATIVE_S, abs=2)

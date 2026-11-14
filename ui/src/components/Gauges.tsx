@@ -8,9 +8,8 @@ import type { HelmState, Mapping } from "../types";
 // Expressions worth watching even when the mapping does not use them, to see how well each one is detected
 // for this player. Left and right are the player's own sides.
 const WATCH: [string, string][] = [
-  ["mouthSmileLeft", "Smile, your left side"],
-  ["mouthSmileRight", "Smile, your right side"],
   ["mouthPucker", "Pucker"],
+  ["cheekPuff", "Cheek puff"],
 ];
 
 const FLASH_MS = 450; // how long a row reads "Firing" after a tap, so it can be seen from across a table

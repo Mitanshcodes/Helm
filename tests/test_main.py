@@ -58,7 +58,7 @@ def test_fired_is_held_long_enough_for_the_dashboard():
 
 def test_commands_do_not_break_the_loop(monkeypatch, tmp_path):
     monkeypatch.setattr(profiles, "_ROOT", tmp_path)              # saves land in a temp dir, not profiles/
-    for name in ("TAKE_READY_S", "TAKE_HOLD_S", "TAKE_RELAX_S"):  # 5 takes in 1.5 s instead of 15 s
+    for name in ("TAKE_READY_S", "TAKE_HOLD_S", "TAKE_RELAX_S", "TAKE_GO_TIMEOUT_S"):   # 5 takes in ~2 s
         monkeypatch.setattr(config, name, 0.1)
     rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
     rt.set_paused(False)

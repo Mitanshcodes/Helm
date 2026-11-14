@@ -242,15 +242,22 @@ def _offline(game: str, calib: Calibration, learned: list[str], has_breath: bool
     return m, describe(m, game)
 
 
-# Face expressions the coach builds gestures from, in default preference order: name, blendshape, on, off, words.
+# Face expressions gestures are built from, in default preference order: name, blendshapes (read as their max),
+# on, off, plain words. Left and right smiles are one gesture: tracking cannot tell them apart reliably.
 _EXPRESSIONS = (
-    ("brow_raise", "browInnerUp", 0.6, 0.4, "eyebrow raise"),
-    ("smile_left", "mouthSmileLeft", 0.6, 0.4, "smile on your left side"),
-    ("smile_right", "mouthSmileRight", 0.6, 0.4, "smile on your right side"),
-    ("jaw_open", "jawOpen", 0.7, 0.45, "mouth open wide"),
-    ("pucker", "mouthPucker", 0.6, 0.4, "pucker your lips"),
-    ("cheek_puff", "cheekPuff", 0.6, 0.4, "puff your cheeks"),
+    ("brow_raise", ("browInnerUp",), 0.6, 0.4, "eyebrow raise"),
+    ("smile", ("mouthSmileLeft", "mouthSmileRight"), 0.6, 0.4, "smile"),
+    ("jaw_open", ("jawOpen",), 0.7, 0.45, "mouth open wide"),
+    ("pucker", ("mouthPucker",), 0.6, 0.4, "pucker your lips"),
+    ("cheek_puff", ("cheekPuff",), 0.6, 0.4, "puff your cheeks"),
 )
+
+
+def expression_gesture(sources: tuple[str, ...], on: float, off: float) -> dict:
+    g = {"kind": "blendshape", "sources": list(sources), "on": on, "off": off}
+    if len(sources) > 1:
+        g["combine"] = "max"
+    return g
 _FACE_BUTTONS = ("A", "B", "X", "Y")
 _FREQUENCY_RANK = {"constant": 0, "often": 1, "occasional": 2, "rare": 3}
 
@@ -270,18 +277,19 @@ def _candidates(calib: Calibration, learned: list[str], has_breath: bool) -> lis
     then breath."""
     usable = usable_expressions(calib)
 
-    def strength(blend: str) -> float:
-        peak = calib.blend_peak.get(blend)
-        if peak is None:
-            return -1.0                                # unmeasured: after the measured ones, in default order
-        i = BLENDSHAPE_NAMES.index(blend)
-        return peak - (calib.blend_neutral[i] if len(calib.blend_neutral) > i else 0.0)
+    def strength(sources: tuple[str, ...]) -> float:
+        best = -1.0                                    # unmeasured: after the measured ones, in default order
+        for blend in sources:
+            peak = calib.blend_peak.get(blend)
+            if peak is not None:
+                i = BLENDSHAPE_NAMES.index(blend)
+                best = max(best, peak - (calib.blend_neutral[i] if len(calib.blend_neutral) > i else 0.0))
+        return best
 
     out = [(n, {"kind": "learned", "on": 0.7, "off": 0.5}, f"your move \"{n.replace('_', ' ')}\"")
            for n in learned]
-    face = sorted((e for e in _EXPRESSIONS if e[1] in usable), key=lambda e: -strength(e[1]))
-    out += [(n, {"kind": "blendshape", "sources": [b], "on": on, "off": off}, words)
-            for n, b, on, off, words in face]
+    face = sorted((e for e in _EXPRESSIONS if set(e[1]) <= usable), key=lambda e: -strength(e[1]))
+    out += [(n, expression_gesture(srcs, on, off), words) for n, srcs, on, off, words in face]
     if has_breath:
         out += [(n, {"kind": "breath"}, n.replace("_", " ")) for n in ("hard_puff", "hard_sip", "soft_puff", "soft_sip")]
     return out
@@ -341,9 +349,9 @@ def describe(m: dict, game: str) -> list[str]:
         g = gestures.get(name) or {}
         if g.get("kind") == "learned":
             return f"your move \"{name.replace('_', ' ')}\""
-        if g.get("kind") == "blendshape" and len(g.get("sources") or []) == 1:
-            for n, b, _, _, w in _EXPRESSIONS:
-                if g["sources"][0] == b:
+        if g.get("kind") == "blendshape":
+            for _, srcs, _, _, w in _EXPRESSIONS:
+                if set(g.get("sources") or []) == set(srcs):
                     return w
         return words.get(name, name.replace("_", " "))
 

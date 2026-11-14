@@ -228,4 +228,4 @@ def test_review_fills_an_empty_button_instead_of_rebuilding():
 def test_player_report_lists_usable_gestures_for_the_agent():
     report = coach.player_report(default_calibration("guest", mode="quick"), ["left_smirk"], False)
     names = [g["name"] for g in report["usable_gestures"]]
-    assert names[0] == "left_smirk" and {"brow_raise", "smile_left", "smile_right", "jaw_open"} <= set(names)
+    assert names[0] == "left_smirk" and {"brow_raise", "smile", "jaw_open", "pucker"} <= set(names)

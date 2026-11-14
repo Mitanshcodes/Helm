@@ -163,35 +163,45 @@ def _as_frames(frames: np.ndarray) -> np.ndarray:
     return a[np.isfinite(a).all(axis=1)]
 
 
-class TakeRecorder:
-    """Guides the player through takes of one gesture (or 15 s of negatives) and keeps the frames.
+_BLINKS = [BLENDSHAPE_NAMES.index(n) for n in ("eyeBlinkLeft", "eyeBlinkRight")]
+_MOVE_MASK = np.ones(FEATURE_DIM, bool)
+_MOVE_MASK[_BLINKS] = False                       # a blink is not the move
+_MOVE_MASK[-1] = False                            # nor is breath
 
-    Per take: "get ready", "do it now and hold", "relax". Positives are the hold frames furthest from neutral;
-    the second half of each relax window is neutral rest for the "none" class (`rest`). The timer pauses while
-    the face is lost.
+
+class TakeRecorder:
+    """Guides the player through takes of one move (or 15 s of everyday face) and keeps the frames.
+
+    Each take works like a calibration step: "get ready" (the relaxed face it is measured against), then
+    "now, and hold", which waits until the face has actually moved and records TAKE_HOLD_S of the move held
+    (nudging after TAKE_NUDGE_S, giving up after TAKE_GO_TIMEOUT_S), then "relax". The second half of each relax
+    window is neutral rest for the "none" class (`rest`). Every timer pauses while the face is lost.
+    Steps: take_N_ready, take_N_go, take_N_relax; read_aloud for the everyday face.
     """
 
     def __init__(self, name: str | None, takes: int = config.TAKES):   # name None = record negatives only (15 s)
         self.name = name
         self.takes = takes
         self.rest: list[np.ndarray] = []           # neutral frames from the relax windows, for "none"
+        self._label = (name or "").replace("_", " ")
         if name is None:
-            self._phases = [("negatives", config.NEGATIVE_S, "Talk, look around, laugh", "negative")]
+            self._phases = [("read_aloud", config.NEGATIVE_S, "Read the text aloud, look around, and laugh", "negative")]
         else:
-            label = name.replace("_", " ")
             self._phases = []
             for k in range(1, takes + 1):
-                step = f"take_{k}"
-                lead = f"Take {k} of {takes}:"
-                self._phases += [(step, config.TAKE_READY_S, f"{lead} get ready to {label}", "ready"),
-                                 (step, config.TAKE_HOLD_S, f"{lead} {label} now, and hold", "hold"),
-                                 (step, config.TAKE_RELAX_S, f"{lead} relax", "relax")]
+                lead = f"Try {k} of {takes}:"
+                self._phases += [(f"take_{k}_ready", config.TAKE_READY_S, f"{lead} relax, then get ready to {self._label}", "ready"),
+                                 (f"take_{k}_go", config.TAKE_HOLD_S, f"{self._label.capitalize()} now, and hold", "go"),
+                                 (f"take_{k}_relax", config.TAKE_RELAX_S, "And relax", "relax")]
         self._total_s = sum(p[1] for p in self._phases)
         self._i = 0
-        self._elapsed = 0.0
+        self._elapsed = 0.0                        # seconds in this phase (face visible)
+        self._held = 0.0                           # go phase: seconds spent past TAKE_MOVED
         self._done_s = 0.0
         self._last_t: float | None = None
         self._frames: list[np.ndarray] = []        # current phase
+        self._moved: list[np.ndarray] = []         # go phase: frames past TAKE_MOVED
+        self._baseline = np.zeros(FEATURE_DIM, np.float32)
         self._result: list[np.ndarray] = []
         self._done = False
 
@@ -202,21 +212,33 @@ class TakeRecorder:
         self._last_t = t_s
         if not s.face:
             return self._progress(prompt="I can't see your face. Look at the screen")
-        self._frames.append(np.asarray(s.delta, np.float32))
+        delta = np.asarray(s.delta, np.float32)
+        self._frames.append(delta)
         self._elapsed += dt
-        duration = self._phases[self._i][1]
-        if self._elapsed >= duration:
+        step, duration, _, kind = self._phases[self._i]
+        if kind == "go":
+            if self._distance(delta) >= config.TAKE_MOVED:
+                self._held += dt
+                self._moved.append(delta)
+            finished = self._held >= config.TAKE_HOLD_S or self._elapsed >= config.TAKE_GO_TIMEOUT_S
+        else:
+            finished = self._elapsed >= duration
+        if finished:
             self._finish_phase()
             self._done_s += duration
             self._i += 1
-            self._elapsed -= duration              # carry the overshoot so the phases do not drift
-            self._frames = []
+            self._elapsed = 0.0
+            self._held = 0.0
+            self._frames, self._moved = [], []
             self._done = self._i == len(self._phases)
         return self._progress()
 
     def result(self) -> list[np.ndarray]:
         """One (n, 56) array per take, or a single array of negatives. Valid once Progress.done is True."""
         return list(self._result)
+
+    def _distance(self, delta: np.ndarray) -> float:
+        return float(np.linalg.norm((delta - self._baseline)[_MOVE_MASK]))
 
     def _finish_phase(self) -> None:
         kind = self._phases[self._i][3]
@@ -225,10 +247,15 @@ class TakeRecorder:
         frames = np.stack(self._frames)
         if kind == "negative":
             self._result.append(frames)
-        elif kind == "hold":
-            distance = np.linalg.norm(frames, axis=1)
-            keep = max(1, int(round(config.TAKE_TOP_FRACTION * len(frames))))
-            self._result.append(frames[np.sort(np.argsort(-distance)[:keep])])
+        elif kind == "ready":                      # the relaxed face just before the move
+            self._baseline = np.median(frames[len(frames) // 2:], axis=0).astype(np.float32)
+        elif kind == "go":
+            if self._moved:
+                self._result.append(np.stack(self._moved))
+            else:                                  # timed out: keep the frames furthest from the ready face
+                distance = np.array([self._distance(f) for f in frames])
+                keep = max(1, int(round(config.TAKE_TOP_FRACTION * len(frames))))
+                self._result.append(frames[np.sort(np.argsort(-distance)[:keep])])
         elif kind == "relax":
             self.rest.append(frames[len(frames) // 2:])
 
@@ -236,10 +263,14 @@ class TakeRecorder:
         if self._done:
             return Progress(active=False, step="done", prompt="Recording complete", progress=1.0, overall=1.0,
                             done=True)
-        step, duration, phase_prompt, _ = self._phases[self._i]
-        return Progress(active=True, step=step, prompt=prompt or phase_prompt,
-                        progress=min(self._elapsed / duration, 1.0),
-                        overall=min((self._done_s + self._elapsed) / self._total_s, 0.99))
+        step, duration, phase_prompt, kind = self._phases[self._i]
+        progress = min(self._elapsed / duration, 1.0)
+        if kind == "go":                           # the ring fills only while the move is held
+            progress = min(self._held / config.TAKE_HOLD_S, 1.0)
+            if prompt is None and self._held == 0.0 and self._elapsed >= config.TAKE_NUDGE_S:
+                prompt = f"A little bigger: {self._label}, and hold"
+        return Progress(active=True, step=step, prompt=prompt or phase_prompt, progress=progress,
+                        overall=min((self._done_s + min(self._elapsed, duration)) / self._total_s, 0.99))
 
 
 class GestureEngine:

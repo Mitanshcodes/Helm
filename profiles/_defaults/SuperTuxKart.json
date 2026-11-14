@@ -7,16 +7,16 @@
   "triggers": [],
   "gestures": {
     "brow_raise":  {"kind": "blendshape", "sources": ["browInnerUp"], "on": 0.6, "off": 0.4},
-    "smile_left":  {"kind": "blendshape", "sources": ["mouthSmileLeft"], "on": 0.6, "off": 0.4},
-    "smile_right": {"kind": "blendshape", "sources": ["mouthSmileRight"], "on": 0.6, "off": 0.4},
+    "smile":       {"kind": "blendshape", "sources": ["mouthSmileLeft", "mouthSmileRight"], "combine": "max", "on": 0.6, "off": 0.4},
+    "pucker":      {"kind": "blendshape", "sources": ["mouthPucker"], "on": 0.6, "off": 0.4},
     "jaw_open":    {"kind": "blendshape", "sources": ["jawOpen"], "on": 0.7, "off": 0.45},
     "eyes_closed": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"], "combine": "min", "on": 0.85, "off": 0.6}
   },
   "buttons": [
-    {"gesture": "brow_raise",  "target": "A", "mode": "tap"},
-    {"gesture": "smile_left",  "target": "X", "mode": "tap"},
-    {"gesture": "smile_right", "target": "B", "mode": "tap"},
-    {"gesture": "jaw_open",    "target": "Y", "mode": "tap"}
+    {"gesture": "brow_raise", "target": "A", "mode": "tap"},
+    {"gesture": "smile",      "target": "B", "mode": "tap"},
+    {"gesture": "pucker",     "target": "X", "mode": "tap"},
+    {"gesture": "jaw_open",   "target": "Y", "mode": "tap"}
   ],
   "auto": {},
   "pause": {"gesture": "eyes_closed", "hold_ms": 2000}

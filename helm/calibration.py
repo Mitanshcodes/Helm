@@ -5,7 +5,8 @@ import numpy as np
 from helm import config
 from helm.contracts import AXES, BLENDSHAPE_NAMES, N_BLEND, Calibration, FrameFeatures, Progress
 
-# step name, seconds, prompt, what it measures: ("neutral",) | ("range", axis, sign) | ("expr", blendshape)
+# step name, seconds, prompt, what it measures: ("neutral",) | ("range", axis, sign) | ("expr", blendshape, ...)
+# An "expr" step with several blendshapes is one gesture read as their max (a smile is either side).
 _NEUTRAL = ("neutral", config.CALIB_NEUTRAL_S, "Look at the screen and relax your face", ("neutral",))
 _FULL_STEPS = (
     _NEUTRAL,
@@ -16,10 +17,7 @@ _FULL_STEPS = (
      ("range", "pitch", -1)),
     ("brow_raise", config.CALIB_EXPRESSION_S, "Raise your eyebrows, three times", ("expr", "browInnerUp")),
     ("jaw_open", config.CALIB_EXPRESSION_S, "Open your mouth wide, three times", ("expr", "jawOpen")),
-    ("smile_left", config.CALIB_EXPRESSION_S, "Smile with the left side of your mouth, three times",
-     ("expr", "mouthSmileLeft")),
-    ("smile_right", config.CALIB_EXPRESSION_S, "Smile with the right side of your mouth, three times",
-     ("expr", "mouthSmileRight")),
+    ("smile", config.CALIB_EXPRESSION_S, "Smile wide, three times", ("expr", "mouthSmileLeft", "mouthSmileRight")),
     ("pucker", config.CALIB_EXPRESSION_S, "Pucker your lips like a kiss, three times", ("expr", "mouthPucker")),
 )
 _QUICK_STEPS = (("neutral", config.CALIB_NEUTRAL_QUICK_S, _NEUTRAL[2], ("neutral",)),)
@@ -164,14 +162,19 @@ class Calibrator:
                 self._prompt_note = f"That was a small {word} movement; that's fine."
             self._range[axis][1 if sign > 0 else 0] = limit
         elif measure[0] == "expr":
-            blend_name = measure[1]
-            k = BLENDSHAPE_NAMES.index(blend_name)
-            peaks = top_peaks(np.array([f.blend[k] for f in frames]), np.array([t for t, _ in self._samples]))
+            names = list(measure[1:])
+            idx = [BLENDSHAPE_NAMES.index(n) for n in names]
+            times = np.array([t for t, _ in self._samples])
+            for name, k in zip(names, idx):            # each source's own peak scales its expression level
+                own = top_peaks(np.array([f.blend[k] for f in frames]), times)
+                if own:
+                    self._blend_peak[name] = float(np.median(own))
+            # Reliability is judged on the gesture as read (max over the sources, above each one's neutral).
+            above = np.array([max(f.blend[k] - self._blend_neutral[k] for k in idx) for f in frames])
+            peaks = top_peaks(above, times)
             if not peaks:
                 return
             median_peak = float(np.median(peaks))
-            self._blend_peak[blend_name] = median_peak
-            neutral = float(self._blend_neutral[k])
             if (len(peaks) == 3 and min(peaks) >= config.RELIABLE_MIN_PEAK_RATIO * median_peak
-                    and median_peak - neutral >= config.RELIABLE_MIN_PEAK_ABOVE_NEUTRAL):
-                self._reliable.append(blend_name)
+                    and median_peak >= config.RELIABLE_MIN_PEAK_ABOVE_NEUTRAL):
+                self._reliable.extend(names)
