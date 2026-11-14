@@ -106,6 +106,14 @@ export function setThreshold(m: Mapping, gesture: string, on: number): Mapping {
   return next;
 }
 
+/** How long a gesture must stay past `on` before it presses (filters out twitches while talking). */
+export function setMinHold(m: Mapping, gesture: string, ms: number): Mapping {
+  const next = clone(m);
+  const g = next.gestures?.[gesture];
+  if (g) g.min_hold_ms = ms;
+  return next;
+}
+
 /** The pad targets a gesture currently drives. */
 export function targetsOf(m: Mapping | null, gesture: string): string[] {
   return [

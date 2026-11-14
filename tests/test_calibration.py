@@ -167,3 +167,44 @@ def test_quick_mode_is_neutral_only():
 def test_bad_mode_is_rejected():
     with pytest.raises(ValueError):
         Calibrator("x", "slow")
+
+
+class SteeringMovesBrows(Player):
+    """MediaPipe reads this player's brows as raised whenever the head turns, with a relaxed face."""
+
+    def __init__(self, lift: float, **kw):
+        super().__init__(**kw)
+        self.lift = lift
+
+    def frame(self, step, t_in_step, face=True):
+        f = super().frame(step, t_in_step, face)
+        if step.startswith(("yaw", "pitch")):
+            f.blend[BLENDSHAPE_NAMES.index("browInnerUp")] += self.lift
+        return f
+
+
+def test_weak_expression_keeps_the_default_scale():
+    """No real repetition: no measured peak. A noise bump taken as the peak made pucker fire on any twitch."""
+    cal = Calibrator("sam", "full")
+    run(cal, Player())
+    c = cal.result()
+    assert "mouthPucker" not in c.blend_peak and "mouthPucker" not in c.reliable
+    assert c.blend_peak["jawOpen"] - c.blend_neutral[BLENDSHAPE_NAMES.index("jawOpen")] >= config.CALIB_MIN_SPAN
+
+
+def test_head_turns_raise_the_scale_so_steering_stays_below_off():
+    brow = BLENDSHAPE_NAMES.index("browInnerUp")
+    cal = Calibrator("sam", "full")
+    run(cal, SteeringMovesBrows(lift=0.2))                 # 2.5 x 0.2 = 0.5, below the 0.7 real raise
+    c = cal.result()
+    assert c.blend_peak["browInnerUp"] - c.blend_neutral[brow] == pytest.approx(0.7, abs=0.02)
+    assert "browInnerUp" in c.reliable
+
+    cal = Calibrator("sam", "full")
+    run(cal, SteeringMovesBrows(lift=0.4))                 # 2.5 x 0.4 = 1.0: the real raise only reaches 0.7 of it
+    c = cal.result()
+    span = c.blend_peak["browInnerUp"] - c.blend_neutral[brow]
+    assert span == pytest.approx(1.0, abs=0.02)
+    assert 0.4 / span <= config.TRIGGER_OFF                # a relaxed face while steering never presses
+    assert "browInnerUp" not in c.reliable
+    assert any("Brow raise" in n and "turn your head" in n for n in cal.notes)

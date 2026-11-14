@@ -8,10 +8,10 @@
   ],
   "triggers": [],
   "gestures": {
-    "brow_raise":  {"kind": "blendshape", "sources": ["browInnerUp"], "on": 0.6, "off": 0.4},
-    "jaw_open":    {"kind": "blendshape", "sources": ["jawOpen"], "on": 0.6, "off": 0.4},
-    "smile":       {"kind": "blendshape", "sources": ["mouthSmileLeft", "mouthSmileRight"], "combine": "max", "on": 0.6, "off": 0.4},
-    "pucker":      {"kind": "blendshape", "sources": ["mouthPucker"], "on": 0.6, "off": 0.4},
+    "brow_raise":  {"kind": "blendshape", "sources": ["browInnerUp"], "on": 0.6, "off": 0.4, "min_hold_ms": 100},
+    "jaw_open":    {"kind": "blendshape", "sources": ["jawOpen"], "on": 0.6, "off": 0.4, "min_hold_ms": 100},
+    "smile":       {"kind": "blendshape", "sources": ["mouthSmileLeft", "mouthSmileRight"], "combine": "max", "on": 0.6, "off": 0.4, "min_hold_ms": 100},
+    "pucker":      {"kind": "blendshape", "sources": ["mouthPucker"], "on": 0.6, "off": 0.4, "min_hold_ms": 100},
     "eyes_closed": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"], "combine": "min", "on": 0.85, "off": 0.6}
   },
   "buttons": [

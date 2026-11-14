@@ -1564,14 +1564,14 @@ code {
 
 .sliders {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(520px, 100%), 1fr));
   gap: 6px 40px;
   margin-top: 10px;
 }
 
 .slider {
   display: grid;
-  grid-template-columns: 170px minmax(0, 1fr) 52px;
+  grid-template-columns: 170px minmax(0, 1fr) 52px 120px;
   align-items: center;
   gap: 12px;
 }

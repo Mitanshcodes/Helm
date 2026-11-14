@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ALWAYS, FACE_BUTTONS, MORE_BUTTONS, STICK_AXES, TRIGGERS, bindingOf, gestureLabel, setAxis, setBinding, setPause,
-  setThreshold, targetLabel, type Mode,
+  setMinHold, setThreshold, targetLabel, type Mode,
 } from "../mappingEdit";
 import type { Catalog, Mapping, MappingStatus, Send } from "../types";
 
@@ -20,6 +20,7 @@ const HEAD: [string, string][] = [
   ["roll", "Tilt head to a shoulder"],
 ];
 const HOLDS = [1000, 1500, 2000, 3000];
+const MIN_HOLDS = [0, 60, 100, 150, 200, 300]; // ms past `on` before a press
 
 function GesturePicker(props: { value: string; catalog?: Catalog; allowAlways: boolean; label: string; onChange: (v: string) => void }) {
   const { value, catalog, allowAlways, label, onChange } = props;
@@ -156,13 +157,20 @@ export function MappingEditor(props: { mapping: Mapping; catalog?: Catalog; stat
       {sensitivity.length > 0 && (
         <section className="map-section sensitivity">
           <h3>How hard each gesture must be made</h3>
-          <p className="caption">Further right needs a bigger movement: fewer accidental presses.</p>
+          <p className="caption">Further right needs a bigger movement: fewer accidental presses. The time is how long the move must be held before it presses: longer ignores quick twitches, like talking, but presses a little later.</p>
           <div className="sliders">
             {sensitivity.map(([name, g]) => (
               <label key={name} className="slider">
                 <span>{gestureLabel(catalog, name)}</span>
                 <input type="range" min={0.3} max={0.95} step={0.05} value={g.on} onChange={(e) => setDraft(setThreshold(draft, name, Number(e.target.value)))} />
                 <b>{Math.round((g.on ?? 0) * 100)}%</b>
+                {g.kind === "blendshape" && name !== pause?.gesture ? (
+                  <select className="mode" value={g.min_hold_ms ?? 60} aria-label={`Hold time for ${gestureLabel(catalog, name)}`}
+                    onChange={(e) => setDraft(setMinHold(draft, name, Number(e.target.value)))}>
+                    {MIN_HOLDS.includes(g.min_hold_ms ?? 60) ? null : <option value={g.min_hold_ms}>{g.min_hold_ms} ms</option>}
+                    {MIN_HOLDS.map((ms) => <option key={ms} value={ms}>{ms} ms</option>)}
+                  </select>
+                ) : <span />}
               </label>
             ))}
           </div>

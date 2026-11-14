@@ -8,8 +8,8 @@
     {"source": "breath_sip", "target": "lt", "lo": 0.15, "hi": 0.85}
   ],
   "gestures": {
-    "brow_raise":  {"kind": "blendshape", "sources": ["browInnerUp"], "on": 0.6, "off": 0.4},
-    "smile":       {"kind": "blendshape", "sources": ["mouthSmileLeft", "mouthSmileRight"], "combine": "max", "on": 0.6, "off": 0.4},
+    "brow_raise":  {"kind": "blendshape", "sources": ["browInnerUp"], "on": 0.6, "off": 0.4, "min_hold_ms": 100},
+    "smile":       {"kind": "blendshape", "sources": ["mouthSmileLeft", "mouthSmileRight"], "combine": "max", "on": 0.6, "off": 0.4, "min_hold_ms": 100},
     "eyes_closed": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"], "combine": "min", "on": 0.85, "off": 0.6},
     "left_smirk":  {"kind": "learned", "on": 0.7, "off": 0.5},
     "hard_puff":   {"kind": "breath"}

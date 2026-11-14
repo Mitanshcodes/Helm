@@ -20,7 +20,8 @@ AXIS_GAMMA = 2.0                   # >1 = gentle near center, full lock still at
 DEFAULT_RANGE_DEG = 20.0           # per direction, when there is no calibration (and quick mode's start)
 MIN_RANGE_DEG = 8.0                # floor on a measured range: below this, tracking jitter alone moves the stick
 DEFAULT_PEAK_ABOVE_NEUTRAL = 0.5   # expression peak when none was measured
-MIN_EXPRESSION_SPAN = 0.05         # floor on (peak - neutral) so expr never divides by ~0
+MIN_EXPRESSION_SPAN = 0.15         # floor on (peak - neutral): no calibration, old or odd, makes an expression
+                                   # hair-trigger (0.05 let tracking jitter alone reach `on`)
 AUTO_RANGE_SAMPLES = 1800          # quick mode: excursions kept per axis and direction (~60 s at 30 fps)
 AUTO_RANGE_MIN_SAMPLES = 10        # quick mode: excursions needed before a limit widens
 DRIFT_TIME_CONSTANT_S = 30.0
@@ -40,6 +41,10 @@ CALIB_PEAK_SEPARATION_S = 0.4      # expression peaks closer than this count as 
 RELIABLE_MIN_REPS = 2              # repetitions an expression needs to count as reliable
 RELIABLE_MIN_PEAK_RATIO = 0.5      # weakest counted repetition / median repetition
 RELIABLE_MIN_PEAK_ABOVE_NEUTRAL = 0.12
+CALIB_MIN_SPAN = 0.2               # a measured expression's scale (peak - neutral) is at least this
+REST_PERCENTILE = 98               # "how much the relaxed face moves": this percentile over the neutral and turn steps
+REST_SPAN_FACTOR = 2.5             # scale >= this x that, so steering with a relaxed face stays below 1/2.5 = 0.4
+RELIABLE_MIN_REACH = 0.8           # reliable only if the real move reaches this share of a scale raised that way
 # Calibration never prompts for these, so they are trusted without a check: blinks drive the pause
 # gesture in every mapping, and quick mode also trusts the two expressions the judge profile uses.
 ASSUMED_RELIABLE = ("eyeBlinkLeft", "eyeBlinkRight")
@@ -50,6 +55,10 @@ STATS_WINDOW = 60                  # frames in the rolling fps and latency media
 NEAR_MISS_RATIO = 0.8              # an attempt that reaches this share of `on` without firing is a near-miss
 WATCH_EXPRESSIONS = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight", "mouthPucker", "cheekPuff")
                                    # raw scores in the state message, so the dashboard can show unmapped ones
+CROSSTALK_RATIO = 0.8              # a mapped gesture is held back while another one (no shared blendshape) is stronger
+                                   # than it by this factor, measured as level / on: smiling also lifts jawOpen a bit
+EXPRESSION_MIN_HOLD_MS = 100       # face expressions the coach maps must stay past `on` this long (talking twitches)
+PROFILE_WATCH_S = 1.0              # how often hand edits to profiles/<player>/*.json are picked up
 FIRED_HOLD_MS = 150                # a fire stays in the state message this long, so 30 Hz states never miss it
 COACH_TIMEOUT_S = 60
 COACH_DEFAULT_MODEL = "anthropic:claude-opus-5-5"   # overridden by the HELM_COACH_MODEL environment variable

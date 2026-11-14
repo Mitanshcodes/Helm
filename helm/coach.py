@@ -271,7 +271,8 @@ _EXPRESSIONS = (
 
 
 def expression_gesture(sources: tuple[str, ...], on: float, off: float) -> dict:
-    g = {"kind": "blendshape", "sources": list(sources), "on": on, "off": off}
+    g = {"kind": "blendshape", "sources": list(sources), "on": on, "off": off,
+         "min_hold_ms": config.EXPRESSION_MIN_HOLD_MS}
     if len(sources) > 1:
         g["combine"] = "max"
     return g

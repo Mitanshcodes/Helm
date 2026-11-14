@@ -64,6 +64,8 @@ export default function App() {
       setApplied(null);
       setCoach(null);
       setMappingStatus({ errors: [], applied: false });
+    } else if (msg.name === "profile_reloaded") {
+      setToast(`Applied your edits to ${String(data.file)}`);
     } else if (msg.name === "error") {
       const message = String(data.message ?? "Something went wrong");
       if (data.cmd === "set_mapping") {

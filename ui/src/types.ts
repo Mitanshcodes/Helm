@@ -19,7 +19,7 @@ export interface Mapping {
   game?: string;
   axes?: { source: string; target: string; deadzone?: number; curve?: number; invert?: boolean }[];
   triggers?: { source: string; target: string; lo?: number; hi?: number }[];
-  gestures?: Record<string, { kind: string; sources?: string[]; combine?: string; on?: number; off?: number }>;
+  gestures?: Record<string, { kind: string; sources?: string[]; combine?: string; on?: number; off?: number; min_hold_ms?: number }>;
   buttons?: { gesture: string; target: string; mode: string }[];
   auto?: Record<string, number>;
   pause?: { gesture: string; hold_ms: number } | null;
@@ -52,7 +52,7 @@ export interface CatalogGesture {
   name: string;
   label: string;
   group: "face" | "learned" | "breath";
-  definition: { kind: string; sources?: string[]; combine?: string; on?: number; off?: number };
+  definition: { kind: string; sources?: string[]; combine?: string; on?: number; off?: number; min_hold_ms?: number };
   usable: boolean; // false: this player's calibration says the expression is weak
 }
 
@@ -69,7 +69,7 @@ export interface FrameMsg {
 
 export interface EventMsg {
   type: "event";
-  name: "calibration_done" | "gesture_trained" | "coach_result" | "profile_loaded" | "error";
+  name: "calibration_done" | "gesture_trained" | "coach_result" | "profile_loaded" | "profile_reloaded" | "error";
   data: Record<string, unknown>;
 }
 

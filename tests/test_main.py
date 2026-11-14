@@ -131,3 +131,66 @@ def test_dashboard_without_npm_warns_and_carries_on(tmp_path, monkeypatch):
     from helm import main as helm_main
     monkeypatch.setattr(helm_main.shutil, "which", lambda name: None)
     assert helm_main.ensure_dashboard(_ui(tmp_path)) is False
+
+
+def test_crosstalk_is_held_back_but_two_real_moves_pass():
+    from helm.main import hold_back_crosstalk
+    comp = {"smile": (0.6, frozenset({"mouthSmileLeft", "mouthSmileRight"})), "jaw_open": (0.7, frozenset({"jawOpen"})),
+            "brow_raise": (0.6, frozenset({"browInnerUp"})), "big_brow": (0.9, frozenset({"browInnerUp"}))}
+    act = {"smile": 1.0, "jaw_open": 0.75, "brow_raise": 0.0, "big_brow": 0.0, "eyes_closed": 0.9}
+    out = hold_back_crosstalk(act, comp)
+    assert out["smile"] == 1.0 and out["jaw_open"] == 0.0           # jaw is past `on`, but only as a side effect
+    assert out["eyes_closed"] == 0.9 and act["jaw_open"] == 0.75     # not a competitor; the input is not changed
+    both = hold_back_crosstalk({"smile": 0.95, "brow_raise": 0.9}, comp)
+    assert both == {"smile": 0.95, "brow_raise": 0.9}                # made on purpose together
+    same = hold_back_crosstalk({"brow_raise": 1.0, "big_brow": 0.6}, comp)
+    assert same["big_brow"] == 0.6                                   # same blendshape: layered on purpose
+    quiet = {"smile": 0.1, "jaw_open": 0.0}
+    assert hold_back_crosstalk(quiet, comp) is quiet                 # nothing to hold back: no copy
+
+
+def test_runtime_competitors_are_the_mapped_gestures_except_pause():
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
+    assert set(rt._competitors) == {"brow_raise", "smile", "pucker", "jaw_open"}
+    assert rt._competitors["jaw_open"] == (0.7, frozenset({"jawOpen"}))
+
+
+def test_hand_edits_to_profile_files_are_applied(monkeypatch, tmp_path):
+    from dataclasses import asdict, replace
+    from helm.calibration import default_calibration
+    mapping = default_mapping("SuperTuxKart")                    # read the repo defaults before redirecting
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    calib = default_calibration("sam", mode="full")
+    profiles.save_calibration(calib)
+    profiles.save_mapping("sam", "SuperTuxKart", mapping)
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server", "--player", "sam"]))
+    seen: dict = {}
+    rt._check_profile_files(seen)                                # first look: baseline only
+    assert rt._requests == [] and rt.pop_events() == []
+
+    def touch(path, text):
+        path.write_text(text)
+        seen[path] -= 1                                          # a change even if the clock did not tick
+
+    folder = tmp_path / "sam"
+    edited = json.loads(json.dumps(mapping))
+    edited["gestures"]["brow_raise"]["on"] = 0.8
+    touch(folder / "SuperTuxKart.json", json.dumps(edited))
+    calib_edit = replace(calib, blend_peak={"browInnerUp": 0.9})
+    touch(folder / "calibration.json", json.dumps(asdict(calib_edit)))
+    rt._check_profile_files(seen)
+    assert sorted(k for k, _ in rt._requests) == ["set_calibration", "set_mapping"]
+    assert [e["name"] for e in rt.pop_events()] == ["profile_reloaded", "profile_reloaded"]
+    rt._handle_requests()
+    assert rt._mapping["gestures"]["brow_raise"]["on"] == 0.8 and rt._calib.blend_peak == {"browInnerUp": 0.9}
+
+    touch(folder / "SuperTuxKart.json", json.dumps(edited))       # Helm's own save: same content, nothing to do
+    touch(folder / "calibration.json", "{ half typed")
+    rt._check_profile_files(seen)
+    events = rt.pop_events()
+    assert rt._requests == [] and [e["name"] for e in events] == ["error"]
+    assert "calibration.json was not applied" in events[0]["data"]["message"]
+    edited["gestures"]["brow_raise"]["off"] = 0.95                 # off above on: refused, current mapping kept
+    touch(folder / "SuperTuxKart.json", json.dumps(edited))
+    rt._check_profile_files(seen)
+    assert rt._requests == [] and "thresholds must satisfy" in rt.pop_events()[0]["data"]["message"]

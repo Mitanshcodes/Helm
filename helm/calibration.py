@@ -70,8 +70,11 @@ class Calibrator:
         self._elapsed = 0.0                        # face-visible seconds in the current step
         self._held = 0.0                           # range steps: seconds spent turned past CALIB_RANGE_MOVED_DEG
         self._reps: list[float] = []               # expression steps: peak (above neutral) of each repetition
+        self._rep_sources: list[list[float]] = []  # ...and each source blendshape's own peak in that repetition
         self._in_rep = False
         self._rep_peak = 0.0
+        self._rep_source_peak: list[float] = []
+        self._rest: list[np.ndarray] = []          # relaxed face from the neutral and head-turn steps
         self._done_s = 0.0                         # seconds of completed steps
         self._last_t: float | None = None
         self._samples: list[tuple[float, FrameFeatures]] = []
@@ -101,24 +104,29 @@ class Calibrator:
             finished = ((self._elapsed >= duration and self._held >= config.CALIB_RANGE_HOLD_S)
                         or self._elapsed >= config.CALIB_RANGE_TIMEOUT_S)
         elif measure[0] == "expr":                 # count repetitions live; end at three, or give up
-            level = max(float(f.blend[k] - self._blend_neutral[k]) for k in _indices(measure))
+            values = [float(f.blend[k] - self._blend_neutral[k]) for k in _indices(measure)]
+            level = max(values)
             if not self._in_rep and level >= config.CALIB_REP_LEVEL:
-                self._in_rep, self._rep_peak = True, level
+                self._in_rep, self._rep_peak, self._rep_source_peak = True, level, values
             elif self._in_rep:
                 self._rep_peak = max(self._rep_peak, level)
+                self._rep_source_peak = [max(a, b) for a, b in zip(self._rep_source_peak, values)]
                 if level < 0.5 * config.CALIB_REP_LEVEL:
                     self._in_rep = False
                     self._reps.append(self._rep_peak)
+                    self._rep_sources.append(self._rep_source_peak)
             finished = len(self._reps) >= 3 or self._elapsed >= config.CALIB_EXPRESSION_MAX_S
         else:
             finished = self._elapsed >= duration
+        if measure[0] in ("neutral", "range"):     # how much a relaxed face moves, e.g. while steering
+            self._rest.append(np.asarray(f.blend, np.float32))
         if finished:
             self._finish_step()
             self._done_s += duration
             self._i += 1
             self._elapsed = 0.0
             self._held = 0.0
-            self._reps, self._in_rep, self._rep_peak = [], False, 0.0
+            self._reps, self._rep_sources, self._in_rep, self._rep_peak = [], [], False, 0.0
             self._samples = []
             if self._i == len(self._steps):
                 self._done = True
@@ -186,19 +194,39 @@ class Calibrator:
                 self._prompt_note = f"That was a small {word} movement; that's fine."
             self._range[axis][1 if sign > 0 else 0] = limit
         elif measure[0] == "expr":
+            # The scale (peak) comes only from real repetitions. Without one, the expression keeps the default
+            # scale: a noise bump taken as the peak made a weak expression fire on any twitch. The scale is at
+            # least CALIB_MIN_SPAN, and big enough that the relaxed face while turning the head stays below `off`.
             names = list(measure[1:])
-            times = np.array([t for t, _ in self._samples])
-            for name, k in zip(names, _indices(measure)):   # each source's own peak scales its expression level
-                own = top_peaks(np.array([f.blend[k] for f in frames]), times)
-                if own:
-                    self._blend_peak[name] = float(np.median(own))
+            rest = self._rest_level()
+            reach = 0.0                            # best source: how far its real move gets above the rest floor
+            for j, (name, k) in enumerate(zip(names, _indices(measure))):
+                own = [r[j] for r in self._rep_sources]
+                if not own:
+                    continue
+                measured = float(np.median(own))
+                floor = config.REST_SPAN_FACTOR * float(rest[k])
+                self._blend_peak[name] = float(self._blend_neutral[k]) + max(measured, config.CALIB_MIN_SPAN, floor)
+                if measured > 0.0:
+                    reach = max(reach, measured / max(measured, floor))
             # Reliable: at least two clear repetitions, of similar strength, well above the relaxed face.
             reps = sorted(self._reps, reverse=True)[:3]
+            word = self._steps[self._i][0].replace("_", " ").capitalize()
             if len(reps) >= config.RELIABLE_MIN_REPS:
                 median_peak = float(np.median(reps))
                 if (median_peak >= config.RELIABLE_MIN_PEAK_ABOVE_NEUTRAL
                         and min(reps) >= config.RELIABLE_MIN_PEAK_RATIO * median_peak):
-                    self._reliable.extend(names)
+                    if reach >= config.RELIABLE_MIN_REACH:
+                        self._reliable.extend(names)
+                    else:
+                        self.notes.append(f"{word} also moves when you turn your head, so it needs a bigger move.")
                     return
-            word = self._steps[self._i][0].replace("_", " ")
-            self.notes.append(f"{word.capitalize()} was hard to read; it can still be mapped by hand.")
+            self.notes.append(f"{word} was hard to read; it can still be mapped by hand.")
+
+    def _rest_level(self) -> np.ndarray:
+        """Per blendshape, how far above neutral the relaxed face goes (REST_PERCENTILE) over the neutral and
+        head-turn steps."""
+        if not self._rest:
+            return np.zeros(N_BLEND, np.float32)
+        above = np.stack(self._rest) - self._blend_neutral
+        return np.maximum(np.percentile(above, config.REST_PERCENTILE, axis=0), 0.0).astype(np.float32)
