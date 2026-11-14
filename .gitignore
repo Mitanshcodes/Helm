@@ -1,0 +1,25 @@
+# personal
+CLAUDE.local.md
+.env
+.DS_Store
+.vscode/
+.idea/
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# dashboard
+node_modules/
+ui/dist/
+
+# profiles: guest is throwaway, tuned demo profiles are committed
+profiles/guest/
+
+# recordings: ignore .npz everywhere except profiles/ and eval/results/
+*.npz
+!profiles/**/*.npz
+!eval/results/**/*.npz

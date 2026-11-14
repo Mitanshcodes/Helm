@@ -1,0 +1,17 @@
+{
+  "player": "_defaults",
+  "game": "SuperTuxKart",
+  "axes": [
+    {"source": "yaw", "target": "lx", "deadzone": 0.08, "curve": 1.5, "invert": false}
+  ],
+  "triggers": [],
+  "gestures": {
+    "brow_raise":  {"kind": "blendshape", "sources": ["browInnerUp"], "on": 0.6, "off": 0.4},
+    "eyes_closed": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"], "combine": "min", "on": 0.6, "off": 0.4}
+  },
+  "buttons": [
+    {"gesture": "brow_raise", "target": "A", "mode": "tap"}
+  ],
+  "auto": {},
+  "pause": {"gesture": "eyes_closed", "hold_ms": 1000}
+}

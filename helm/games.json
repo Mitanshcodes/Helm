@@ -1,0 +1,12 @@
+{
+  "SuperTuxKart": {
+    "actions": [
+      {"name": "steer",      "kind": "axis",   "analog": true,  "frequency": "constant",   "target": "lx"},
+      {"name": "accelerate", "kind": "held",   "analog": true,  "frequency": "constant",   "target": "rt"},
+      {"name": "brake",      "kind": "held",   "analog": true,  "frequency": "occasional", "target": "lt"},
+      {"name": "fire item",  "kind": "tapped", "analog": false, "frequency": "often",      "target": "A"},
+      {"name": "nitro",      "kind": "held",   "analog": false, "frequency": "often",      "target": "B"},
+      {"name": "rescue",     "kind": "tapped", "analog": false, "frequency": "rare",       "target": "X"}
+    ]
+  }
+}

@@ -1,0 +1,62 @@
+/* OWNER: P4 */
+/* Dark background, one accent color, large type, no decoration. Has to read from two meters away. */
+
+:root {
+  --bg: #0b0d10;
+  --panel: #15191e;
+  --text: #f2f4f7;
+  --muted: #8a94a3;
+  --accent: #3ddc97;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 20px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.accent {
+  color: var(--accent);
+}
+
+.reconnecting {
+  display: grid;
+  place-items: center;
+  height: 100vh;
+  font-size: 3rem;
+  color: var(--muted);
+}
+
+.wizard .prompt {
+  font-size: 3rem;
+}

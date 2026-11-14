@@ -1,0 +1,13 @@
+# Shared, append only. Python 3.11.
+numpy
+opencv-python
+mediapipe
+scipy
+scikit-learn
+fastapi
+uvicorn[standard]
+pyserial
+pynput
+vgamepad; sys_platform == "win32"
+pytest
+# P1 appends the coach packages (deepagents and one model provider) when starting coach.py.
