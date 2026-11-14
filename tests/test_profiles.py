@@ -417,3 +417,27 @@ def test_guest_calibration_left_on_disk_is_still_ignored(profile_root):
     (profile_root / profiles.GUEST_PLAYER / "calibration.json").write_text(
         json.dumps(asdict(calibrated_player())))
     assert profiles.load_calibration(profiles.GUEST_PLAYER) is None
+
+
+@pytest.mark.parametrize("player", sorted(profiles.SHARED_PLAYERS))
+def test_shared_identities_never_persist_calibration(profile_root, player):
+    """`guest` and `judge` are taken in turns by strangers (docs/SPEC.md 13). Persisting either
+    means the second judge of the day silently inherits the first judge's calibration."""
+    person = calibrated_player()
+    person.player = player
+    profiles.save_calibration(person)
+    assert not (profile_root / player).exists()
+    assert profiles.load_calibration(player) is None
+
+
+def test_named_players_still_persist(profile_root):
+    for player in ("demo", "demo_webcam", "sam"):
+        person = calibrated_player()
+        person.player = player
+        profiles.save_calibration(person)
+        assert profiles.load_calibration(player) == person
+
+
+def test_shared_identities_keep_their_committed_mapping():
+    """Only calibration is throwaway: the judge profile's mapping must still load."""
+    assert profiles.load_mapping("judge", "SuperTuxKart")["auto"] == {"rt": 1.0}

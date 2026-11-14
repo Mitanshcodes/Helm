@@ -30,6 +30,11 @@ _ROOT = Path(__file__).resolve().parent.parent / config.PROFILES_DIR
 # stranger's head range and neutral pose. docs/SPEC.md 7 already treats `guest/` as throwaway.
 GUEST_PLAYER = "guest"
 
+# Shared identities that strangers take turns using. Their calibration is never persisted, so the
+# second judge of the day cannot inherit the first judge's head range and neutral pose. Named
+# players (`demo`, `demo_webcam`, `sam`) do persist -- that is the point of having a name.
+SHARED_PLAYERS = frozenset({GUEST_PLAYER, "judge"})
+
 
 def _write_json(path: Path, payload: dict) -> None:
     """Write through a temp file in the same directory, so a crash mid-write cannot leave a
@@ -46,7 +51,7 @@ def load_calibration(player: str) -> Calibration | None:
     A corrupt profile must not stop the demo: the caller falls back to default calibration, which
     is the same safe path as a player who has not calibrated yet.
     """
-    if player == GUEST_PLAYER:
+    if player in SHARED_PLAYERS:
         return None
     path = _ROOT / player / "calibration.json"
     try:
@@ -56,7 +61,7 @@ def load_calibration(player: str) -> Calibration | None:
 
 
 def save_calibration(c: Calibration) -> None:
-    if c.player == GUEST_PLAYER:
+    if c.player in SHARED_PLAYERS:
         return
     _write_json(_ROOT / c.player / "calibration.json", asdict(c))
 
