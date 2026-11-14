@@ -91,7 +91,7 @@ def default_mapping(game: str) -> dict:
                   "invert": False}],
         "triggers": [],
         "gestures": {"eyes_closed": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"],
-                                     "combine": "min", "on": config.TRIGGER_ON, "off": config.TRIGGER_OFF}},
+                                     "combine": "min", "on": config.PAUSE_ON, "off": config.PAUSE_OFF}},
         "buttons": [],
         "auto": {},
         "pause": {"gesture": "eyes_closed", "hold_ms": config.PAUSE_HOLD_MS},

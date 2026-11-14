@@ -59,7 +59,9 @@ TRIGGER_OFF = 0.4
 TRIGGER_MIN_HOLD_MS = 60
 TRIGGER_REFRACTORY_MS = 200
 TAP_MS = 120
-PAUSE_HOLD_MS = 1000
+PAUSE_HOLD_MS = 2000               # eyes held shut this long toggles pause (and resume)
+PAUSE_ON = 0.85                    # eyes_closed level that counts as shut: squinting or glancing down stays below
+PAUSE_OFF = 0.6
 
 KEYBOARD_AXIS_THRESHOLD = 0.3
 KEYBOARD_TRIGGER_THRESHOLD = 0.3

@@ -12,7 +12,7 @@
     "jaw_open":    {"kind": "blendshape", "sources": ["jawOpen"], "on": 0.6, "off": 0.4},
     "smile":       {"kind": "blendshape", "sources": ["mouthSmileLeft", "mouthSmileRight"], "combine": "max", "on": 0.6, "off": 0.4},
     "pucker":      {"kind": "blendshape", "sources": ["mouthPucker"], "on": 0.6, "off": 0.4},
-    "eyes_closed": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"], "combine": "min", "on": 0.6, "off": 0.4}
+    "eyes_closed": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"], "combine": "min", "on": 0.85, "off": 0.6}
   },
   "buttons": [
     {"gesture": "jaw_open",   "target": "rt", "mode": "hold"},
@@ -21,5 +21,5 @@
     {"gesture": "pucker",     "target": "Y",  "mode": "tap"}
   ],
   "auto": {},
-  "pause": {"gesture": "eyes_closed", "hold_ms": 1000}
+  "pause": {"gesture": "eyes_closed", "hold_ms": 2000}
 }

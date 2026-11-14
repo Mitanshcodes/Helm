@@ -190,8 +190,9 @@ class Mapper:
         return levels.get(source, 0.0) if source else 0.0
 
     def _update_pause(self, levels: dict[str, float], t_ms: float) -> bool:
-        """Hold the pause gesture for hold_ms to toggle. Re-toggling needs a release first,
-        or holding your eyes shut would flip pause once per second."""
+        """Hold the pause gesture above `on` for hold_ms, without a break, to toggle. Any dip below `on`
+        restarts the hold, so blinks and squints never add up to a pause. Re-toggling needs a release
+        below `off` first, or holding your eyes shut would flip pause every hold_ms."""
         name = self._pause_gesture
         if not name:
             return self._paused
@@ -205,9 +206,10 @@ class Mapper:
                     self._paused = not self._paused
                     self._pause_armed = False
                     self._pause_since = None
-        elif level <= defn.get("off", config.TRIGGER_OFF):
-            self._pause_armed = True
+        else:
             self._pause_since = None
+            if level <= defn.get("off", config.TRIGGER_OFF):
+                self._pause_armed = True
         return self._paused
 
     @property

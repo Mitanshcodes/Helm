@@ -52,7 +52,7 @@ Mapping format (JSON):
               | {"kind": "learned", "on": 0.7, "off": 0.5} | {"kind": "breath"}},
  "buttons": [{"gesture": "<name>", "target": "<button or lt/rt>", "mode": "tap"|"hold"|"toggle"}],
  "auto": {"rt": 1.0},
- "pause": {"gesture": "<name>", "hold_ms": 1000}}
+ "pause": {"gesture": "<name>", "hold_ms": 2000}}
 A learned gesture's name must be one of the player's learned gestures. A breath gesture's name is one of \
 soft_sip, hard_sip, soft_puff, hard_puff and needs a breath sensor. Keep the pause gesture as eyes closed \
 (eyeBlinkLeft + eyeBlinkRight, combine "min") held 1000 ms unless the report says the eyes are unreliable. \
@@ -219,7 +219,7 @@ def offline_mapping(game: str, calib: Calibration, learned: list[str], has_breat
     m.setdefault("auto", {})
     if (m.get("pause") or {}).get("gesture") not in gestures:
         gestures["eyes_closed"] = {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"],
-                                   "combine": "min", "on": config.TRIGGER_ON, "off": config.TRIGGER_OFF}
+                                   "combine": "min", "on": config.PAUSE_ON, "off": config.PAUSE_OFF}
         m["pause"] = {"gesture": "eyes_closed", "hold_ms": config.PAUSE_HOLD_MS}
     if check(m, calib, learned, has_breath):
         m = _minimal_mapping(game, calib)              # last resort: steer and pause only
@@ -233,7 +233,7 @@ def _minimal_mapping(game: str, calib: Calibration) -> dict:
                   "invert": False}],
         "triggers": [],
         "gestures": {"eyes_closed": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"],
-                                     "combine": "min", "on": config.TRIGGER_ON, "off": config.TRIGGER_OFF}},
+                                     "combine": "min", "on": config.PAUSE_ON, "off": config.PAUSE_OFF}},
         "buttons": [], "auto": {"rt": 1.0},
         "pause": {"gesture": "eyes_closed", "hold_ms": config.PAUSE_HOLD_MS},
     }

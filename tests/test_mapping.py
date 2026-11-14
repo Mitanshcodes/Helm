@@ -170,6 +170,31 @@ def test_mapper_pause_gesture_toggles_once_per_closure(monkeypatch):
     assert not resumed.paused and resumed.rt == 1.0
 
 
+def test_blinks_and_squints_never_add_up_to_a_pause(monkeypatch):
+    clock = [0]
+    monkeypatch.setattr(mapping_module.time, "perf_counter_ns", lambda: clock[0])
+    mapper = Mapper(default_mapping("SuperTuxKart"))
+
+    def tick(milliseconds, level):
+        clock[0] = milliseconds * 1_000_000
+        signals = mapper_signals()
+        signals.t_capture_ns = signals.t_infer_ns = clock[0]
+        return mapper.update(signals, {"eyes_closed": level}, [], {})
+
+    on = config.PAUSE_ON
+    squint = (config.PAUSE_ON + config.PAUSE_OFF) / 2              # between off and on: not shut
+    t = 0
+    for _ in range(10):                                            # blink, squint, blink... for 6 s
+        assert not tick(t, 1.0).paused
+        assert not tick(t + 300, squint).paused
+        t += 600
+    assert not tick(t, on - 0.01).paused                           # nearly shut for the whole hold: no
+    assert not tick(t + config.PAUSE_HOLD_MS, on - 0.01).paused
+    t += config.PAUSE_HOLD_MS * 2
+    tick(t, 1.0)
+    assert tick(t + config.PAUSE_HOLD_MS, 1.0).paused              # a real, unbroken closure still pauses
+
+
 def test_minimum_hold_and_hysteresis_at_exact_thresholds():
     trigger = Trigger(mode="hold")
     start = 1234.25
