@@ -291,20 +291,26 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
       else if (cmd.cmd === "set_mapping") {
         if (!cmd.mapping.pause) event("error", { message: "Mapping rejected", cmd: "set_mapping", errors: ["A pause gesture must be set"] });
         else mapping = cmd.mapping;
-      } else if (cmd.cmd === "coach_build") {
-        later(900, () =>
+      } else if (cmd.cmd === "coach_build" || cmd.cmd === "coach_review" || cmd.cmd === "coach_ask") {
+        // The real Captain asks Claude; the mock plays its steps and a small, plausible answer.
+        const request = cmd.cmd === "coach_ask" ? cmd.request : cmd.cmd === "coach_build" ? `Set me up for ${cmd.game}` : "Review my session";
+        event("captain_step", { text: "Captain is on it", start: true });
+        later(300, () => event("captain_step", { text: "Reading SuperTuxKart's controls and your moves" }));
+        later(600, () => event("captain_step", { text: "Asking Claude" }));
+        later(1600, () => event("captain_step", { text: "Claude proposed 1 change; checking them" }));
+        later(1900, () => event("captain_step", { text: "Done in 1.9 s" }));
+        later(2000, () =>
           event("coach_result", {
-            mapping: { ...MAPPING, game: cmd.game },
-            rationale: [
-              "Steering is on head turn, your widest range.",
-              "Fire item is used most, so it goes to eyebrow raise, your strongest expression.",
-              "Nitro is held, so it sits on cheek puff, which shares no muscles with the jaw throttle.",
-            ],
-            changes: [],
+            mapping,
+            summary: "Steering now needs less head turning.",
+            changes: [{ change: "steering sensitivity: 1.0 → 1.6", reason: "You turned far in calibration; this halves the effort." }],
+            backend: "claude",
+            offline_reason: "",
+            elapsed_s: 1.9,
+            request,
+            kind: cmd.cmd === "coach_ask" ? "ask" : cmd.cmd === "coach_build" ? "build" : "review",
           }),
         );
-      } else if (cmd.cmd === "coach_review") {
-        later(900, () => event("coach_result", { mapping, rationale: [], changes: ["Cheek puff nearly fired 6 times: lowered its threshold from 0.60 to 0.52."] }));
       }
     },
     close() {

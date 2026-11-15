@@ -13,6 +13,7 @@ def offline(monkeypatch):
     """Tests never reach the network: no key means the offline path."""
     monkeypatch.setattr(coach, "_env_loaded", True)               # never read the real .env
     monkeypatch.setattr(coach, "_claude_cli", lambda: None)       # never launch the real Claude Code
+    monkeypatch.setattr(coach, "find_claude", lambda: None)
     for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "HELM_COACH_MODEL", "OPENAI_API_KEY",
                 "HELM_COACH_BACKEND", "HELM_COACH_CLAUDE_MODEL"):
         monkeypatch.delenv(key, raising=False)
@@ -290,3 +291,68 @@ def test_claude_not_logged_in_falls_back_offline(monkeypatch):
     result = coach.build_mapping("SuperTuxKart", calib, [], False)
     assert result["rationale"][0].startswith("Offline coach") and "not logged in" in result["rationale"][-1]
     assert coach.check(result["mapping"], calib, [], False) == []
+
+
+# ------------------------------------------------------------------ the Captain
+
+def _captain_setup():
+    calib = default_calibration("sam", mode="quick")
+    mapping = coach.offline_mapping("SuperTuxKart", calib, ["nod_up"], False)
+    mapping["axes"][0]["gain"] = 1.7                                    # the player's own tuning
+    mapping["gestures"]["brow_raise"]["min_hold_ms"] = 180
+    menu = coach._gesture_menu(calib, ["nod_up"], False, "SuperTuxKart")
+    return calib, mapping, menu
+
+
+def test_captain_changes_only_what_it_names():
+    calib, mapping, menu = _captain_setup()
+    changes = [{"op": "button", "target": "RB", "gesture": "smile", "mode": "hold", "reason": "skid on smile"},
+               {"op": "threshold", "gesture": "jaw_open", "on": 0.8, "reason": "jaw fired by accident"}]
+    new, applied, skipped = coach.apply_changes(mapping, changes, menu)
+    assert len(applied) == 2 and skipped == []
+    assert {"gesture": "smile", "target": "RB", "mode": "hold"} in new["buttons"]
+    assert new["gestures"]["jaw_open"]["on"] == 0.8 and new["gestures"]["jaw_open"]["off"] == 0.6
+    assert new["axes"][0]["gain"] == 1.7 and new["gestures"]["brow_raise"]["min_hold_ms"] == 180   # untouched
+    assert coach._captain_errors(new, calib, ["nod_up"], False) == []
+    diff = coach.mapping_diff(mapping, new, menu)
+    assert any(d.startswith("RB: nothing") for d in diff) and any("sensitivity: 0.7 → 0.8" in d for d in diff)
+    assert mapping["axes"][0]["gain"] == 1.7 and not any(b["target"] == "RB" for b in mapping["buttons"])   # input untouched
+
+
+def test_captain_skips_changes_that_do_not_fit():
+    calib, mapping, menu = _captain_setup()
+    changes = [{"op": "button", "target": "A", "gesture": "fly", "reason": "?"},
+               {"op": "steering", "gain": 9, "reason": "quicker steering"},
+               {"op": "button", "target": "B", "gesture": "hard_puff", "mode": "hold", "reason": "?"}]
+    new, applied, skipped = coach.apply_changes(mapping, changes, menu)
+    assert len(applied) == 1 and len(skipped) == 2                      # unknown gesture, breath without a sensor
+    assert new["axes"][0]["gain"] == config.STEER_GAIN_MAX               # clamped, not refused
+
+
+def test_ask_captain_with_claude(monkeypatch):
+    calib, mapping, menu = _captain_setup()
+    monkeypatch.setattr(coach, "find_claude", lambda: "/usr/local/bin/claude")
+    calls = []
+
+    def fake(exe, prompt, web, timeout):
+        calls.append(prompt)
+        return {"summary": "Steering needs less head turn now.",
+                "changes": [{"op": "steering", "gain": 2.2, "reason": "You turned far in calibration."}]}
+
+    monkeypatch.setattr(coach, "_call_claude", fake)
+    steps = []
+    out = coach.ask_captain("steering needs too much head turning", mapping, calib, ["nod_up"], False,
+                            "SuperTuxKart", on_step=steps.append)
+    assert out["backend"] == "claude" and out["mapping"]["axes"][0]["gain"] == 2.2
+    assert out["changes"] == [{"change": "steering sensitivity: 1.7 → 2.2", "reason": "You turned far in calibration."}]
+    assert "Player request: steering needs too much head turning" in calls[0] and "fire item" in calls[0]
+    assert steps[0].startswith("Reading SuperTuxKart") and steps[-1].startswith("Done in")
+
+
+def test_ask_captain_offline_says_why_and_keeps_the_mapping():
+    calib, mapping, menu = _captain_setup()
+    out = coach.ask_captain("make B easier", mapping, calib, ["nod_up"], False, "SuperTuxKart")
+    assert out["backend"] == "offline" and "Claude Code was not found" in out["offline_reason"]
+    assert out["mapping"] == mapping and out["changes"] == []
+    built = coach.ask_captain("set me up", mapping, calib, ["nod_up"], False, "SuperTuxKart", kind="build")
+    assert built["backend"] == "offline" and coach.check(built["mapping"], calib, ["nod_up"], False) == []

@@ -80,6 +80,7 @@ export interface EventMsg {
     | "calibration_done"
     | "breath_calibration_done"
     | "face_id_done"
+    | "captain_step"
     | "gesture_trained"
     | "coach_result"
     | "profile_loaded"
@@ -95,8 +96,13 @@ export interface Trained {
 
 export interface CoachResult {
   mapping: Mapping;
-  rationale: string[];
-  changes: string[];
+  summary: string;
+  changes: { change: string; reason: string }[]; // what changed (worked out by Helm) and why (the Captain)
+  backend: "claude" | "offline";
+  offline_reason: string;
+  elapsed_s: number;
+  request: string;
+  kind: "ask" | "build" | "review";
 }
 
 export interface MappingStatus {
@@ -119,6 +125,7 @@ export type Command =
   | { cmd: "save_profile" }
   | { cmd: "pause"; on: boolean }
   | { cmd: "coach_build"; game: string }
-  | { cmd: "coach_review" };
+  | { cmd: "coach_review" }
+  | { cmd: "coach_ask"; request: string };
 
 export type Send = (cmd: Command) => void;

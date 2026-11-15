@@ -389,23 +389,28 @@ class Runtime:
         self._request("set_paused", on)
 
     def coach_build(self, game: str) -> None:
-        def build() -> None:
-            calib = self._calib or default_calibration(self.player)
-            result = coach.build_mapping(game, calib, self._learned(), self._sip.connected)
-            self._event("coach_result", {"mapping": result["mapping"], "rationale": result.get("rationale", []),
-                                         "changes": []})
-
-        self._worker(build)
+        self._captain(f"Set me up for {game}: give its most important actions my best moves, and keep every face "
+                      "button (A, B, X, Y) on a gesture.", game, "build")
 
     def coach_review(self) -> None:
-        def review() -> None:
+        self._captain("Review my session: fix gestures that fired by accident or were hard to trigger.", self.game,
+                      "review")
+
+    def coach_ask(self, request: str) -> None:
+        self._captain(request, self.game, "ask")
+
+    def _captain(self, request: str, game: str, kind: str) -> None:
+        """The Captain on a worker: each step is a `captain_step` event, the answer a `coach_result` event."""
+        def run() -> None:
             calib = self._calib or default_calibration(self.player)
             stats = {**self._stats.summary(), "notices": self._fatigue.notices()}
-            result = coach.review_session(self._mapping, stats, calib, self._learned(), self._sip.connected)
-            self._event("coach_result", {"mapping": result["mapping"], "rationale": [],
-                                         "changes": result.get("changes", [])})
+            result = coach.ask_captain(request, self._mapping, calib, self._learned(), self._sip.connected, game,
+                                       stats=stats, on_step=lambda text: self._event("captain_step", {"text": text}),
+                                       kind=kind)
+            self._event("coach_result", {**result, "request": request, "kind": kind})
 
-        self._worker(review)
+        self._event("captain_step", {"text": "Captain is on it", "start": True})
+        self._worker(run)
 
     def snapshot(self) -> dict:
         """The "state" message of docs/SPEC.md section 8."""

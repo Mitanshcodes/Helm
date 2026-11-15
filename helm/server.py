@@ -120,6 +120,11 @@ def handle_command(runtime: "Runtime", text: str) -> dict | None:
             runtime.coach_build(game)
         elif cmd == "coach_review":
             runtime.coach_review()
+        elif cmd == "coach_ask":
+            request = msg.get("request")
+            if not isinstance(request, str) or not request.strip() or len(request) > 500:
+                return _error('coach_ask needs a "request" of up to 500 characters', cmd=cmd)
+            runtime.coach_ask(request.strip())
         else:
             return _error(f"Unknown command: {cmd}", cmd=cmd)
     except Exception as e:
