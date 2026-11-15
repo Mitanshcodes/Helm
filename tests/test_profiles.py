@@ -394,6 +394,29 @@ def test_list_profiles_skips_defaults_and_calibration_files(profile_root):
     assert profiles.list_profiles() == {"sam": ["SuperTuxKart", "Trackmania"]}
 
 
+def test_identity_metadata_is_not_a_game_and_identity_only_profile_is_visible(profile_root):
+    person = profile_root / 'sam'
+    person.mkdir()
+    (person / 'identity.json').write_text('{"embeddings": []}')
+    (person / 'identity_required.json').write_text('{"required": true}')
+    assert profiles.list_profiles() == {'sam': []}
+    profiles.save_mapping('sam', 'SuperTuxKart', profiles.default_mapping('SuperTuxKart'))
+    assert profiles.list_profiles() == {'sam': ['SuperTuxKart']}
+
+
+@pytest.mark.parametrize('game', ['identity', 'IDENTITY_REQUIRED', 'calibration', 'breath'])
+def test_game_mapping_cannot_read_or_overwrite_profile_metadata(profile_root, game):
+    person = profile_root / 'sam'
+    person.mkdir()
+    path = person / f'{game}.json'
+    path.write_text('{"private_metadata": true}')
+    with pytest.raises(ValueError, match='reserved'):
+        profiles.load_mapping('sam', game)
+    with pytest.raises(ValueError, match='reserved'):
+        profiles.save_mapping('sam', game, {})
+    assert path.read_text() == '{"private_metadata": true}'
+
+
 def test_list_profiles_on_the_real_folder_finds_the_demo_players():
     found = profiles.list_profiles()
     assert "_defaults" not in found

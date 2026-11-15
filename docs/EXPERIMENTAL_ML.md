@@ -1,6 +1,11 @@
 # Experimental identity and geometry pipeline
 
-Status: experiment setup only; the application still uses its existing single-player pipeline.
+Status: single-player identity protection and full 3D dev capture are implemented on this branch.
+The operational gesture classifier is unchanged. The separate `helm-studies` project contains
+the geometry/model comparisons and experimental agreement gates; multiplayer routing is not implemented.
+
+See [IDENTITY.md](IDENTITY.md) for enrollment, live rejection and offline evaluation, and
+[ML_WORKSTREAMS.md](ML_WORKSTREAMS.md) for the shared extraction interface and scope separation.
 
 - Repository: https://github.com/Mitanshcodes/Helm
 - Branch: `experimental/identity-and-geometry`
@@ -16,6 +21,9 @@ Add a face-identity encoder alongside MediaPipe. Start by evaluating OpenCV SFac
 face crops. Identity embeddings select a profile; they are not added to the gesture classifier.
 Enrollment saves several reference embeddings under a stable profile ID, separately from the
 person's calibration, gesture model and game mappings. Include encoder/preprocessing versions.
+
+The first implementation now provides explicit SFace enrollment and rejection for one selected
+profile/controller. The multi-player session routing below remains a later step.
 
 Proposed runtime flow:
 
@@ -36,10 +44,21 @@ Do not update identity templates from uncertain automatic matches.
 
 ## 2. Learn gestures from richer facial features
 
-MediaPipe already produces 3D landmarks. Helm currently retains only the 478 preview points'
-`x,y` coordinates and feeds a separate 56-value vector to `GestureModel`: 52 blend deltas, three
-head axes and breath. The current regression selects only facial movement channels from that
-vector. Thus the full 3D geometry is not currently available to the gesture classifier.
+MediaPipe produces 3D landmarks. This branch now retains both the 478 preview points' `x,y`
+coordinates and all 478 `x,y,z` points, including them in dev recordings. The operational
+`GestureModel` still receives its separate 56-value vector: 52 blend deltas, three head axes and
+breath, and selects facial movement channels only. Full geometry is available for experiments
+without silently changing legacy gesture-model inputs.
+
+Initial exploratory studies compared 18 standalone variants and six agreement gates. Full geometry
+alone did not improve the reliability tradeoff; blendshape/geometry-centroid agreement is a
+candidate for a fresh holdout test. Existing recordings were reused for selection, so these are
+not independent reliability claims. Research reports, private datasets and candidate models remain
+in `helm-studies/artifacts/geometry-pilot-20261114`, outside this source repository.
+
+Identity-protected live extraction uses `num_faces=4`, while the default research extractor uses
+`num_faces=1`; MediaPipe smoothing and feature values differ. Enroll identity before collecting
+protected calibration/gesture data, and validate that mode separately before adopting a candidate.
 
 Compare these feature modes using the same enrollment and evaluation splits:
 

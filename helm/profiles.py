@@ -24,6 +24,7 @@ def _calibration_from_dict(data: dict) -> Calibration:
     return Calibration(**restored)
 
 _ROOT = Path(__file__).resolve().parent.parent / config.PROFILES_DIR
+_METADATA_STEMS = frozenset({'calibration', 'breath', 'identity', 'identity_required'})
 
 # The default player from `--player`, and the identity every judge uses. Its calibration is never
 # persisted: a stranger must always start from a fresh calibration, never inherit the previous
@@ -95,6 +96,8 @@ def save_breath(player: str, max_puff_mv: float, max_sip_mv: float) -> None:
 
 def load_mapping(player: str, game: str) -> dict:
     """Falls back to default_mapping(game) when the player has no mapping for it."""
+    if game.casefold() in _METADATA_STEMS:
+        raise ValueError('Game name is reserved for profile metadata')
     path = _ROOT / player / f"{game}.json"
     try:
         mapping = json.loads(path.read_text())
@@ -104,6 +107,8 @@ def load_mapping(player: str, game: str) -> dict:
 
 
 def save_mapping(player: str, game: str, mapping: dict) -> None:
+    if game.casefold() in _METADATA_STEMS:
+        raise ValueError('Game name is reserved for profile metadata')
     _write_json(_ROOT / player / f"{game}.json", mapping)
 
 
@@ -268,7 +273,8 @@ def list_profiles() -> dict[str, list[str]]:
         if not folder.is_dir() or folder.name.startswith("_"):
             continue
         games = sorted(f.stem for f in folder.glob("*.json")
-                       if f.stem not in ("calibration", "breath"))
-        if games:
+                       if f.stem.casefold() not in _METADATA_STEMS)
+        has_identity = any((folder / name).exists() for name in ('identity.json', 'identity_required.json'))
+        if games or has_identity:
             found[folder.name] = games
     return found

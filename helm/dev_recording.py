@@ -45,14 +45,15 @@ class DevRecording:
                              video_mirrored=False, timing='signals timestamps are authoritative; frame_index maps to video index',
                              source=source, label=label,
                              geometry_schema='mediapipe_normalized_xyz_v1',
-                             geometry_field='frame.landmarks3d')
+                             geometry_field='frame.landmarks3d', processing_modes=[])
         self._thread = threading.Thread(target=self._run, args=(calibration, model, mapping), daemon=False)
         self._thread.start()
 
-    def submit(self, bgr, frame, signals, activations, scores, control, progress):
+    def submit(self, bgr, frame, signals, activations, scores, control, progress, identity=None):
         if self._stop.is_set():
             return False
-        return self._put(('frame', bgr.copy(), frame, signals, dict(activations), dict(scores), control, progress))
+        return self._put(('frame', bgr.copy(), frame, signals, dict(activations), dict(scores), control, progress,
+                          dict(identity) if identity is not None else None))
 
     def calibration(self, value):
         return self._put(('calibration', value))
@@ -143,7 +144,12 @@ class DevRecording:
                     if item[0] == 'calibration':
                         self._json('calibration.json', item[1])
                         continue
-                    _, bgr, frame, signals, activations, scores, control, progress = item
+                    _, bgr, frame, signals, activations, scores, control, progress, identity = item
+                    if identity is not None:
+                        mode = dict(identity_protected=identity.get('protected'),
+                                    face_landmarker_num_faces=identity.get('face_landmarker_num_faces'))
+                        if mode not in self._context['processing_modes']:
+                            self._context['processing_modes'].append(mode)
                     h, w = bgr.shape[:2]
                     if writer is None:
                         writer = cv2.VideoWriter(str(self.path / 'video.avi'), cv2.VideoWriter_fourcc(*'MJPG'), self._fps, (w,h))
@@ -155,7 +161,7 @@ class DevRecording:
                     first_capture = frame.t_capture_ns if first_capture is None else first_capture
                     row = dict(frame_index=self.frames, time_s=(frame.t_capture_ns-first_capture)/1e9,
                                frame=frame, signals=signals, activations=activations, scores=scores,
-                               control=control, progress=progress)
+                               control=control, progress=progress, identity=identity)
                     writer.write(bgr)
                     stream.write(json.dumps(jsonable(row), allow_nan=False)+'\n')
                     self.frames += 1

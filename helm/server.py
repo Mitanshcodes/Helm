@@ -78,6 +78,8 @@ def handle_command(runtime: "Runtime", text: str) -> dict | None:
             if not isinstance(msg.get('on'), bool):
                 return _error('Dev command needs on: true or false', cmd=cmd)
             getattr(runtime, cmd)(msg['on'])
+        elif cmd == "reload_identity":
+            runtime.reload_identity()
         elif cmd == "calibrate":
             if msg.get("mode") not in ("full", "quick", "breath"):
                 return _error('calibrate needs "mode": "full", "quick" or "breath"', cmd=cmd)

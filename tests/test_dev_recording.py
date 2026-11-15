@@ -155,3 +155,26 @@ def test_queue_overflow_stops_capture_without_blocking(tmp_path,monkeypatch):
     finally:
         release.set()
         recording.wait()
+
+
+def test_identity_decision_is_captured_with_its_video_frame(tmp_path):
+    from helm.contracts import ControlState
+    from helm.filters import Normalizer
+
+    recording = DevRecording(tmp_path, 'manual', 'player', 'game', None, None, {})
+    f = FrameFeatures(seq=7, t_capture_ns=1_000_000, t_infer_ns=2_000_000, face=True)
+    s = Normalizer().update(f)
+    decision = dict(protected=True, allowed=True, state='recognized', player='player', frame_seq=7,
+                    face_landmarker_num_faces=4)
+    try:
+        assert recording.submit(np.zeros((120, 160, 3), np.uint8), f, s, {}, {}, ControlState(), None,
+                                identity=decision)
+        decision['allowed'] = False
+    finally:
+        recording.finish()
+        recording.wait()
+    row = json.loads((recording.path / 'signals.jsonl').read_text())
+    assert row['frame']['seq'] == row['identity']['frame_seq'] == 7
+    assert row['identity']['allowed'] is True
+    metadata = json.loads((recording.path / 'metadata.json').read_text())
+    assert metadata['processing_modes'] == [dict(identity_protected=True, face_landmarker_num_faces=4)]

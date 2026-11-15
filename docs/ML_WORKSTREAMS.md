@@ -33,6 +33,11 @@ datasets, identity templates and model weights remain outside Git.
   experimental feature family, never an implicit reinterpretation of legacy enrollment arrays.
 - Dev recording JSON rows serialize `frame.landmarks3d`; metadata identifies it with
   `geometry_schema: mediapipe_normalized_xyz_v1`. Mock and old replay inputs can have no geometry.
+- `DevRecording.submit(..., identity=None)` optionally captures the frame's identity decision in
+  a top-level `identity` field in `signals.jsonl`, copied at submission. Existing callers can omit it.
+  Recording metadata lists observed `processing_modes` (identity protection and MediaPipe face
+  count). Per-frame identity status records `face_landmarker_num_faces`; do not silently mix
+  single-face and multi-face feature caches because their smoothing differs.
 - Studies record the Helm revision, extraction source hashes, model asset hash, dataset manifest,
   preprocessing and split policy. Shared source can change during identity work, so each study
   run must detect source drift and must not silently combine incompatible feature caches.
