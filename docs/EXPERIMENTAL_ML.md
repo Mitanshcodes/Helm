@@ -2,8 +2,7 @@
 
 Status: experiment setup only; the application still uses its existing single-player pipeline.
 
-- Upstream: https://github.com/Mitanshcodes/Helm
-- Fork: https://github.com/rishabhgoel0213/Helm-ML
+- Repository: https://github.com/Mitanshcodes/Helm
 - Branch: `experimental/identity-and-geometry`
 - Starting upstream revision: `6220c2a`
 
