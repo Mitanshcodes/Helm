@@ -109,7 +109,10 @@ def load_mapping(player: str, game: str) -> dict:
 def save_mapping(player: str, game: str, mapping: dict) -> None:
     if game.casefold() in _METADATA_STEMS:
         raise ValueError('Game name is reserved for profile metadata')
-    _write_json(_ROOT / player / f"{game}.json", mapping)
+    # Stamp the owner. A new player's mapping starts life as default_mapping(), which carries
+    # "player": "_defaults", and saving it unchanged left every profile on disk claiming to belong
+    # to _defaults. Copy rather than mutate: the caller's dict is usually the live mapping.
+    _write_json(_ROOT / player / f"{game}.json", {**mapping, "player": player, "game": game})
 
 
 def default_mapping(game: str) -> dict:

@@ -470,3 +470,16 @@ def test_a_calibrated_profile_without_a_mapping_is_listed(profile_root):
     """A profile made in the dashboard has a calibration before anyone presses Save: it must still be pickable."""
     profiles.save_calibration(calibrated_player())
     assert profiles.list_profiles() == {"sam": []}
+
+
+def test_save_mapping_stamps_the_owning_player_and_game(tmp_path, monkeypatch):
+    """A new player's mapping starts as default_mapping(), which says "_defaults". Saving it must
+    not leave the profile on disk claiming to belong to _defaults."""
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    (tmp_path / "sam").mkdir()
+    mapping = {"player": "_defaults", "game": "Other", "axes": [], "triggers": [], "buttons": [],
+               "gestures": {}}
+    profiles.save_mapping("sam", "SuperTuxKart", mapping)
+    saved = json.loads((tmp_path / "sam" / "SuperTuxKart.json").read_text())
+    assert saved["player"] == "sam" and saved["game"] == "SuperTuxKart"
+    assert mapping["player"] == "_defaults", "the caller's dict must not be mutated"
