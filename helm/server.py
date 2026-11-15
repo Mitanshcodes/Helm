@@ -43,7 +43,7 @@ def _error(message: str, **data) -> dict:
     return {"type": "event", "name": "error", "data": {"message": message, **data}}
 
 
-def encode_preview(bgr: np.ndarray, landmarks: np.ndarray | None) -> dict:
+def encode_preview(bgr: np.ndarray, landmarks: np.ndarray | None, faces=None) -> dict:
     """The "frame" message: resized, mirrored JPEG as base64, landmark x mirrored to match."""
     import cv2
 
@@ -56,7 +56,14 @@ def encode_preview(bgr: np.ndarray, landmarks: np.ndarray | None) -> dict:
         mirrored = np.asarray(landmarks, np.float32).copy()
         mirrored[:, 0] = 1.0 - mirrored[:, 0]
         points = np.round(mirrored, 3).tolist()
-    return {"type": "frame", "jpeg": base64.b64encode(jpeg.tobytes()).decode("ascii"), "landmarks": points}
+    message = {"type": "frame", "jpeg": base64.b64encode(jpeg.tobytes()).decode("ascii"), "landmarks": points}
+    if faces is not None:
+        message['faces'] = []
+        for face in faces:
+            mesh = np.asarray(face['landmarks'], np.float32).copy()
+            mesh[:, 0] = 1 - mesh[:, 0]
+            message['faces'].append(dict(player=face['player'], landmarks=np.round(mesh, 3).tolist()))
+    return message
 
 
 def handle_command(runtime: "Runtime", text: str) -> dict | None:
@@ -74,7 +81,18 @@ def handle_command(runtime: "Runtime", text: str) -> dict | None:
         return value if isinstance(value, str) and pattern.match(value) else None
 
     try:
-        if cmd in ('set_dev_mode', 'set_dev_recording'):
+        if cmd == 'set_play_mode':
+            if msg.get('mode') not in ('singleplayer', 'multiplayer'):
+                return _error('Choose singleplayer or multiplayer', cmd=cmd)
+            runtime.set_play_mode(msg['mode'])
+        elif cmd == 'assign_controller':
+            slot, player = msg.get('slot'), msg.get('player')
+            if type(slot) is not int or slot not in (0, 1) or 'player' not in msg:
+                return _error('Choose controller 1 or 2', cmd=cmd)
+            if player is not None and name_of('player', _PROFILE_NAME) is None:
+                return _error('Choose a valid profile', cmd=cmd)
+            runtime.assign_controller(slot, player)
+        elif cmd in ('set_dev_mode', 'set_dev_recording'):
             if not isinstance(msg.get('on'), bool):
                 return _error('Dev command needs on: true or false', cmd=cmd)
             getattr(runtime, cmd)(msg['on'])

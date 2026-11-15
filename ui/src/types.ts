@@ -26,6 +26,7 @@ export interface Mapping {
 }
 
 export interface HelmState {
+  multiplayer?: MultiplayerState;
   identity?: { protected: boolean; allowed: boolean; state: string; player: string; reason: string;
     score?: number | null; face_count?: number; inference_ms?: number; face_landmarker_num_faces?: number | null };
   dev?: { enabled: boolean; recording: boolean; session: null | {
@@ -72,6 +73,17 @@ export interface FrameMsg {
   type: "frame";
   jpeg: string; // base64; empty when there is no picture (mock)
   landmarks: [number, number][] | null;
+  faces?: { player: string | null; landmarks: [number, number][] }[];
+}
+
+export interface MultiplayerState {
+  enabled: boolean;
+  visible_profiles: string[];
+  error: string | null;
+  output_available?: boolean;
+  demo?: boolean;
+  controllers: { slot: number; player: string | null; connected: boolean; loading: boolean;
+    mapping: Mapping | null; control: HelmState["control"] }[];
 }
 
 export interface EventMsg {
@@ -113,6 +125,8 @@ export interface MappingStatus {
 export type ServerMsg = HelmState | FrameMsg | EventMsg;
 
 export type Command =
+  | { cmd: "set_play_mode"; mode: "singleplayer" | "multiplayer" }
+  | { cmd: "assign_controller"; slot: number; player: string | null }
   | { cmd: "reload_identity" }
   | { cmd: "set_dev_mode"; on: boolean }
   | { cmd: "set_dev_recording"; on: boolean }

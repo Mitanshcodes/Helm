@@ -40,6 +40,9 @@
 > today. The evaluation is partly done: the numbers below are marked either **measured** or
 > **not yet measured**, and we don't publish one that wasn't.
 
+The profile picker also offers [two-player mode](docs/MULTIPLAYER.md): recognize two
+enrolled profiles in one camera and assign each to an independent controller.
+
 <br>
 
 ## The problem

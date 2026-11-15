@@ -3,17 +3,17 @@
 // roll boxes, and the stats box. The server already mirrors the picture and the landmarks (docs/SPEC.md 6.14),
 // so nothing is flipped here.
 import { useEffect, useRef } from "react";
-import { degrees } from "../format";
-import { CLOSED_CONTOURS, OPEN_CONTOURS } from "../mesh";
+import { degrees, humanize } from "../format";
+import { CLOSED_CONTOURS, FACE_OVAL, OPEN_CONTOURS } from "../mesh";
 import type { FrameMsg, HelmState } from "../types";
 
 const W = 640;
 const H = 480;
 
 // The face mesh as in the first dashboard: faint landmark dots and solid blue contours over the normal picture.
-function drawMesh(ctx: CanvasRenderingContext2D, points: [number, number][]) {
-  ctx.clearRect(0, 0, W, H);
-  const mesh = getComputedStyle(document.documentElement).getPropertyValue("--mesh").trim() || "#38bdf8";
+function drawMesh(ctx: CanvasRenderingContext2D, points: [number, number][], color?: string, clear = true) {
+  if (clear) ctx.clearRect(0, 0, W, H);
+  const mesh = color || getComputedStyle(document.documentElement).getPropertyValue("--mesh").trim() || "#38bdf8";
   const seen = (p?: [number, number]) => p !== undefined && p[0] >= 0 && p[0] <= 1 && p[1] >= 0 && p[1] <= 1;
 
   ctx.fillStyle = mesh;
@@ -38,7 +38,7 @@ function drawMesh(ctx: CanvasRenderingContext2D, points: [number, number][]) {
 
 export type CameraSize = "compact" | "hero" | "stage"; // overlay window, dashboard centrepiece, focus view
 
-export function CameraView({ frame, state, compact, size, hint }: { frame: FrameMsg | null; state: HelmState; compact?: boolean; size?: CameraSize; hint?: string | null }) {
+export function CameraView({ frame, state, compact, size, hint, profileTones }: { frame: FrameMsg | null; state: HelmState; compact?: boolean; size?: CameraSize; hint?: string | null; profileTones?: Record<string, string> }) {
   const variant: CameraSize = size ?? (compact ? "compact" : "hero");
   const video = useRef<HTMLCanvasElement>(null);
   const mesh = useRef<HTMLCanvasElement>(null);
@@ -57,7 +57,32 @@ export function CameraView({ frame, state, compact, size, hint }: { frame: Frame
     const paint = (picture: HTMLImageElement | null) => {
       if (picture) v.drawImage(picture, 0, 0, W, H);
       else v.clearRect(0, 0, W, H);
-      if (frame.landmarks) drawMesh(m, frame.landmarks);
+      if (state.multiplayer?.enabled) {
+        m.clearRect(0, 0, W, H);
+        const styles = getComputedStyle(document.documentElement);
+        for (const face of frame.faces ?? []) {
+          const player = face.player && state.multiplayer.visible_profiles.includes(face.player) ? face.player : null;
+          const color = styles.getPropertyValue(`--${player ? profileTones?.[player] ?? "blue" : "ink"}`).trim();
+          m.shadowColor = styles.getPropertyValue("--white").trim();
+          m.shadowBlur = 3;
+          drawMesh(m, face.landmarks, color, false);
+          m.shadowBlur = 0;
+          const valid = FACE_OVAL.map(i => face.landmarks[i]).filter(p => p && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+          if (!valid.length) continue;
+          const label = player ? humanize(player) : "Unrecognized";
+          m.font = 'bold 18px sans-serif';
+          const width = Math.min(W - 8, m.measureText(label).width + 20);
+          const x = Math.max(4, Math.min(W - width - 4, Math.min(...valid.map(p => p[0])) * W));
+          const y = Math.max(4, Math.min(H - 30, Math.min(...valid.map(p => p[1])) * H - 34));
+          m.fillStyle = styles.getPropertyValue("--white").trim();
+          m.fillRect(x, y, width, 28);
+          m.strokeStyle = color;
+          m.lineWidth = 3;
+          m.strokeRect(x, y, width, 28);
+          m.fillStyle = styles.getPropertyValue("--ink").trim();
+          m.fillText(label, x + 10, y + 20, width - 16);
+        }
+      } else if (frame.landmarks) drawMesh(m, frame.landmarks);
       else m.clearRect(0, 0, W, H);
     };
     if (!frame.jpeg) return paint(null);
@@ -67,10 +92,11 @@ export function CameraView({ frame, state, compact, size, hint }: { frame: Frame
     return () => {
       img.onload = null;
     };
-  }, [frame]);
+  }, [frame, profileTones, state.multiplayer?.enabled, state.multiplayer?.visible_profiles.join("|")]);
 
-  const found = Boolean(frame) && state.face;
-  const identityLocked = state.identity?.protected && !state.identity.allowed;
+  const multiplayer = state.multiplayer?.enabled;
+  const found = Boolean(frame) && (multiplayer ? Boolean(frame?.faces?.length) : state.face);
+  const identityLocked = !multiplayer && state.identity?.protected && !state.identity.allowed;
   return (
     <figure className={`polaroid ${variant}`}>
       <div className="camera">
@@ -81,11 +107,11 @@ export function CameraView({ frame, state, compact, size, hint }: { frame: Frame
           width={W}
           height={H}
           role="img"
-          aria-label={!frame ? "No camera picture yet" : found ? "Camera preview with your face outlined" : "Camera preview, no face found"}
+          aria-label={!frame ? "No camera picture yet" : found ? multiplayer ? "Camera preview with faces outlined and profile labels" : "Camera preview with your face outlined" : "Camera preview, no face found"}
         />
         {!frame && <p className="camera-msg">no camera picture yet</p>}
-        {frame && !state.face && <p className="camera-msg">{identityLocked ? "waiting for the enrolled person" : "move into view"}</p>}
-        {frame && state.face && state.paused && !state.progress && <p className="camera-msg">paused · close your eyes {(state.mapping?.pause?.hold_ms ?? 2000) / 1000} s to resume</p>}
+        {frame && !found && <p className="camera-msg">{identityLocked ? "waiting for the enrolled person" : "move into view"}</p>}
+        {!multiplayer && frame && state.face && state.paused && !state.progress && <p className="camera-msg">paused · close your eyes {(state.mapping?.pause?.hold_ms ?? 2000) / 1000} s to resume</p>}
         {hint && <p className="camera-hint">{hint}</p>}
       </div>
       <figcaption>
@@ -94,7 +120,7 @@ export function CameraView({ frame, state, compact, size, hint }: { frame: Frame
           <span className="face-flag">{identityLocked ? "🔒 profile locked" : found ? "✓ face found" : frame ? "✗ no face" : "✗ no video"}</span>
         </div>
         {variant !== "compact" && <p className="caption">Video never leaves this laptop.</p>}
-        <p className="pose">
+        {!multiplayer && <p className="pose">
           {(
             [
               ["Turn", state.raw?.yaw ?? 0],
@@ -106,7 +132,7 @@ export function CameraView({ frame, state, compact, size, hint }: { frame: Frame
               {name} <b>{degrees(value)}</b>
             </span>
           ))}
-        </p>
+        </p>}
       </figcaption>
     </figure>
   );

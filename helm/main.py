@@ -26,7 +26,8 @@ from helm.filters import Normalizer
 from helm.gestures import GestureEngine, GestureModel, TakeRecorder
 from helm.mapping import Mapper
 from helm.mock import MockSource, Recorder, ReplaySource, render_preview
-from helm.output import make_gamepad
+from helm.output import make_gamepad, second_gamepad
+from helm.multiplayer import MultiFaceWorker, MultiplayerControllers, load_player
 from helm.sipnpuff import BreathCalibrator, SipPuff
 from helm.vision import FaceTracker
 from helm.identity import IdentityWorker, identity_required, unprotected_status
@@ -272,7 +273,7 @@ class Runtime:
         self._lock = threading.Lock()
         self._requests: list[tuple[str, tuple]] = []
         self._events: list[dict] = []
-        self._preview: tuple[np.ndarray, np.ndarray | None] | None = None
+        self._preview: tuple[np.ndarray, np.ndarray | None] | tuple[np.ndarray, None, list[dict]] | None = None
         self._dev_enabled = getattr(args, 'dev', False)
         self._dev_session = None
         self._dev_sessions = []
@@ -288,6 +289,11 @@ class Runtime:
         self._identity_clock_s = 0.0
         self._identity_last_capture_ns = None
         self._configure_identity()
+        self._multiplayer = MultiplayerControllers(self._pad)
+        self._multi_worker = MultiFaceWorker(self._camera) if self._camera else None
+        self._multi_generation = 0
+        self._multi_seq = -1
+        self._assignment_versions = [0, 0]
         self._snapshot = self._build_snapshot(None, None, {}, ControlState(), None)
 
         self._stop = threading.Event()
@@ -301,6 +307,8 @@ class Runtime:
             self._camera.start()
         if self._identity_worker:
             self._identity_worker.start()
+        if self._multi_worker:
+            self._multi_worker.start()
         self._sip.start()
         self._thread = threading.Thread(target=self._loop, name="pipeline", daemon=True)
         self._thread.start()
@@ -312,6 +320,11 @@ class Runtime:
             self._thread.join(timeout=2.0)
         if self._identity_worker:
             self._identity_worker.close()
+        if self._multi_worker:
+            self._multi_worker.close()
+        self._multiplayer.lose_all()
+        if self._multiplayer.pads[1]:
+            self._multiplayer.pads[1].close()
         self._cancel_face_id()
         closers = [lambda: self._pad.apply(ControlState(t_output_ns=time.perf_counter_ns())), self._pad.close,
                    self._sip.stop]
@@ -425,9 +438,9 @@ class Runtime:
         """The "state" message of docs/SPEC.md section 8."""
         return self._snapshot
 
-    def preview(self) -> tuple[np.ndarray, np.ndarray | None] | None:
-        """Latest bgr frame and landmarks. Under --mock and --replay, a cartoon face drawn from the features
-        (landmarks None). None before the first frame."""
+    def preview(self) -> tuple[np.ndarray, np.ndarray | None] | tuple[np.ndarray, None, list[dict]] | None:
+        """Latest BGR frame and landmarks, with a third list of labeled faces in multiplayer.
+        Mock/replay use a cartoon picture with no landmarks. None before the first frame."""
         return self._preview
 
     def pop_events(self) -> list[dict]:
@@ -467,6 +480,9 @@ class Runtime:
         while not self._stop.is_set():
             try:
                 self._handle_requests()             # recovery/profile commands must work even when identity is locked
+                if self._multiplayer.enabled:
+                    self._multiplayer_tick()
+                    continue
                 f = self._next_features()
                 if f is None:                      # no new frame: keep the pad safe
                     # A confirmed observation may bridge a short no-new-result interval, but only
@@ -481,9 +497,114 @@ class Runtime:
                     self._seen_errors.add(key)
                     log.exception("pipeline error (logged once): %s", key)
                 try:
+                    if self._multiplayer.enabled:
+                        self._multiplayer.lose_all()
                     self._pad.apply(ControlState(t_output_ns=time.perf_counter_ns()))
                 except Exception:
                     pass
+
+    def set_play_mode(self, mode: str) -> None:
+        self._request('play_mode', mode)
+
+    def _do_play_mode(self, mode: str) -> None:
+        enabled = mode == 'multiplayer'
+        if enabled == self._multiplayer.enabled:
+            return
+        self._multiplayer.lose_all()
+        if enabled and self._multiplayer.pads[1] is None:
+            try:
+                self._multiplayer.pads[1] = second_gamepad(self._pad)
+            except Exception as e:
+                self._event('error', {'message': str(e)})
+                return
+        self._assignment_versions = [v + 1 for v in self._assignment_versions]
+        self._multiplayer.sessions = [None, None]
+        self._multiplayer.loading = [False, False]
+        self._multiplayer.enabled = enabled
+        self._multiplayer.error = None
+        self._multi_seq = -1
+        self._preview = None
+        self._cancel_face_id()
+        self._calibrator = self._take_recorder = self._breath_cal = None
+        if self._dev_session:
+            self._dev_session.finish('play_mode_changed')
+            self._dev_session = None
+        if self._multi_worker:
+            self._multi_generation = self._multi_worker.configure(enabled)
+        if enabled:
+            if self._identity_worker:
+                self._identity_worker.configure(None)
+        else:
+            self._configure_identity()
+            self._reset_identity_controls()
+        self._snapshot = self._build_snapshot(None, None, {}, ControlState(), None)
+
+    def assign_controller(self, slot: int, player: str | None) -> None:
+        self._request('assign_controller', slot, player)
+
+    def _do_assign_controller(self, slot: int, player: str | None) -> None:
+        if not self._multiplayer.enabled:
+            self._event('error', {'message': 'Enable multiplayer before assigning a controller'})
+            return
+        if player is None:
+            self._assignment_versions[slot] += 1
+            self._multiplayer.assign(slot, None)
+            return
+        self._multiplayer.expire()
+        if player not in self._multiplayer.visible:
+            self._event('error', {'message': 'Choose a profile currently recognized in the camera'})
+            return
+        if any(s and s.player == player for i, s in enumerate(self._multiplayer.sessions) if i != slot):
+            self._event('error', {'message': 'That profile already controls the other controller'})
+            return
+        self._assignment_versions[slot] += 1
+        version = self._assignment_versions[slot]
+        self._multiplayer.assign(slot, None)
+        self._multiplayer.loading[slot] = True
+        game, generation = self.game, self._multi_generation
+
+        def prepare():
+            try:
+                session = load_player(player, game, hold_back_crosstalk)
+                self._request('finish_assignment', slot, session, version, generation, None)
+            except Exception as e:
+                self._request('finish_assignment', slot, None, version, generation, str(e))
+        self._worker(prepare)
+
+    def _do_finish_assignment(self, slot, session, version, generation, error):
+        if (not self._multiplayer.enabled or generation != self._multi_generation
+                or version != self._assignment_versions[slot]):
+            return
+        self._multiplayer.loading[slot] = False
+        self._multiplayer.expire()
+        try:
+            if error:
+                raise ValueError(error)
+            self._multiplayer.assign(slot, session)
+        except Exception as e:
+            self._event('error', {'message': str(e)})
+
+    def _multiplayer_tick(self):
+        if self._multi_worker is None:
+            self._multiplayer.error = 'Multiplayer needs a live camera and face-enrolled profiles'
+            self._multiplayer.lose_all()
+            self._stop.wait(.05)
+        else:
+            result, error = self._multi_worker.wait_latest(self._multi_seq)
+            if error:
+                self._multiplayer.error = error
+                self._multiplayer.lose_all()
+                self._stop.wait(.05)
+            elif result is not None and result.generation == self._multi_generation:
+                self._multi_seq = result.seq
+                if self._multiplayer.process(result):
+                    overlays = [dict(player=result.matches.get(i), landmarks=f.landmarks)
+                                for i, f in enumerate(result.faces)]
+                    self._preview = (result.image, None, overlays)
+            else:
+                self._multiplayer.expire()
+        self._sip.poll()                # the single physical breath sensor has no implicit multiplayer owner
+        self._snapshot = self._build_snapshot(None, None, {}, ControlState(), None)
 
     def _next_features(self) -> FrameFeatures | None:
         if self._source is not None:
@@ -714,6 +835,12 @@ class Runtime:
         self._request('identity_reload')
 
     def _do_identity_reload(self):
+        if self._multiplayer.enabled:
+            self._multiplayer.lose_all()
+            self._multi_seq = -1
+            if self._multi_worker:
+                self._multi_generation = self._multi_worker.configure(True)
+            return
         self._configure_identity()
         self._reset_identity_controls()
 
@@ -740,6 +867,8 @@ class Runtime:
             self._start_dev_capture('gesture' if self._take_recorder.name else 'negative', self._take_recorder.name)
 
     def _do_dev_recording(self, on: bool) -> None:
+        if on and self._multiplayer.enabled:
+            raise ValueError('Open a player profile to record a dev dataset')
         if not self._dev_enabled:
             raise ValueError('Enable dev mode before recording a dataset')
         if on:
@@ -766,6 +895,8 @@ class Runtime:
         self._dev_sessions.append(self._dev_session)
 
     def _do_calibrate(self, mode: str) -> None:
+        if self._multiplayer.enabled:
+            raise ValueError('Open a player profile before calibrating')
         self._take_recorder = None
         if mode == "breath":
             # No dev capture: there is nothing facial to record, and labelling it 'calibration'
@@ -801,6 +932,8 @@ class Runtime:
             self._reset_identity_controls()
 
     def _do_record(self, name: str | None) -> None:
+        if self._multiplayer.enabled:
+            raise ValueError('Open a player profile before learning a gesture')
         self._cancel_face_id()
         self._start_dev_capture('gesture' if name else 'negative', name)
         self._calibrator = None
@@ -819,6 +952,8 @@ class Runtime:
         self._rebuild_gestures()
 
     def _do_apply_profile(self, player: str, game: str, calib, mapping: dict, model) -> None:
+        if self._multiplayer.enabled:
+            self._do_play_mode('singleplayer')
         if self._dev_session:
             self._dev_session.finish('profile_changed')
             self._dev_session = None
@@ -1085,6 +1220,7 @@ class Runtime:
             "catalog": self._gesture_catalog(),
             "dev": {"enabled": self._dev_enabled, "recording": self._dev_session is not None,
                     "session": self._dev_sessions[-1].status() if self._dev_sessions else None},
+            "multiplayer": self._multiplayer.snapshot(),
         }
 
 

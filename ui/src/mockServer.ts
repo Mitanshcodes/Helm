@@ -56,6 +56,7 @@ const PROFILES: Record<string, string[]> = {
   demo_webcam: ["SuperTuxKart"],
   judge: ["SuperTuxKart"],
   sam: ["SuperTuxKart"],
+  alex: ["SuperTuxKart"],
 };
 export const mockProfiles = async () => PROFILES;
 
@@ -134,6 +135,9 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
   const active: Record<string, boolean> = {};
   const tapUntil: Record<string, number> = {};
   const timers: number[] = [];
+  let multiplayer = false;
+  let assignments: (string | null)[] = [null, null];
+  const faceAtNow = () => ((performance.now() - t0) / 1000) % 45 < 42;
 
   const later = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
   const event = (name: EventMsg["name"], data: Record<string, unknown>) =>
@@ -217,6 +221,12 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
 
     onMessage({
       type: "state",
+      multiplayer: { enabled: multiplayer, demo: true, output_available: true,
+        visible_profiles: multiplayer && face ? ["alex", "sam"] : [], error: null,
+        controllers: assignments.map((p, slot) => ({ slot, player: p, connected: Boolean(p && face), loading: false,
+          mapping: MAPPING, control: { lx: p && face ? Math.sin(t * .7 + slot * 2) * .8 : 0,
+            ly: 0, rx: 0, ry: 0, lt: 0, rt: p && face ? .4 + .3 * Math.sin(t + slot) : 0,
+            buttons: p && face && Math.sin(t * 2 + slot * 3) > .5 ? [slot ? "B" : "A"] : [] } })) },
       fps: 58.2 + 0.6 * Math.sin(t / 3),
       latency_ms: { vision: 14.1 + Math.sin(t), control: 0.6, total: 31 + 2 * Math.sin(t / 2) },
       face,
@@ -243,7 +253,10 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
         : {},
     });
     if (tick++ % 2 === 0) {
-      onMessage({ type: "frame", jpeg: "", landmarks: face ? landmarks(u, levels.brow_raise, levels.jaw_open, levels.eyes_closed) : null });
+      onMessage({ type: "frame", jpeg: "", landmarks: face ? landmarks(u, levels.brow_raise, levels.jaw_open, levels.eyes_closed) : null,
+        faces: multiplayer ? (face ? ["alex", "sam"].map((p, i) => ({ player: p,
+          landmarks: landmarks(u * (i ? -1 : 1), levels.brow_raise, levels.jaw_open, levels.eyes_closed)
+            .map(([x, y]) => [x * .45 + i * .5, y * .8 + .1] as [number, number]) })) : []) : undefined });
     }
   };
 
@@ -253,7 +266,13 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
 
   return {
     send(cmd: Command) {
-      if (cmd.cmd === "pause") paused = cmd.on;
+      if (cmd.cmd === "set_play_mode") { multiplayer = cmd.mode === "multiplayer"; assignments = [null, null]; }
+      else if (cmd.cmd === "assign_controller") {
+        if (!multiplayer || (cmd.player && (!faceAtNow() || !["sam", "alex"].includes(cmd.player) || assignments.some((p, i) => i !== cmd.slot && p === cmd.player)))) {
+          event("error", { message: "Choose a currently recognized, unassigned profile" });
+        } else assignments[cmd.slot] = cmd.player;
+      }
+      else if (cmd.cmd === "pause") paused = cmd.on;
       else if (cmd.cmd === "calibrate") {
         if (cmd.mode === "breath") {
           // Breath range is not face calibration: `calibrated` tracks the face wizard only.
@@ -278,6 +297,8 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
       } else if (cmd.cmd === "record_negative") {
         run(EVERYDAY_FACE, () => event("gesture_trained", { name: "none", accuracy: null }));
       } else if (cmd.cmd === "load_profile") {
+        multiplayer = false;
+        assignments = [null, null];
         later(150, () => {
           const judge = cmd.player === "judge";
           player = cmd.player;
