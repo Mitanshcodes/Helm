@@ -1,5 +1,10 @@
 <!-- OWNER: P4 -->
-# Demo video script (under two minutes)
+# Demo video script (superseded)
+
+The current video script, live demo run of show and Q&A are in [PITCH.md](PITCH.md). The old script below
+describes an earlier build (jaw throttle, the old coach); do not record from it.
+
+## Earlier script
 
 Target length 1:50. Record the screen and the player in one shot where possible, so viewers see
 the face and the kart move together. Hands stay visibly in the lap throughout.
