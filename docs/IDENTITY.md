@@ -12,8 +12,11 @@ no step of its own, so nobody has to stop Helm and run the command below:
 
 - **When it samples:** only in the head-movement steps (resting face, turn left/right, chin up/down), never in the
   expression steps.
-- **How:** `main.FaceEnrollment` takes one sample every 0.75 s until it has 16, keeping an SFace reference only
-  when exactly one face is in view.
+- **How:** `main.FaceEnrollment` takes about 12 samples of the relaxed, straight-on face (one every 0.2 s in the
+  "relax your face" step), then 3 from each head turn (every 0.5 s), skipping turns past 25°. It keeps an SFace
+  reference only when exactly one face is in view. The straight-on face dominates because that is how the player
+  looks while playing; sampling evenly before gave mostly turned references, and a neutral face was not
+  recognized.
 - **When the calibration ends:** it saves them with `save_template` (at least 8) and the profile is protected from
   then on. With fewer clear samples it is skipped and the dashboard says why.
 - **When it doesn't run:** the shared Default/guest and judge profiles, mock/replay, and a laptop without the model.

@@ -321,8 +321,10 @@ def test_face_id_learns_during_head_movement_steps_and_protects_the_profile(monk
     weights = tmp_path / "sface.onnx"
     weights.write_bytes(b"x")
     monkeypatch.setattr(identity, "MODEL_PATH", weights)
-    monkeypatch.setattr(config, "FACE_ID_INTERVAL_S", 0.0)
+    monkeypatch.setattr(config, "FACE_ID_NEUTRAL_INTERVAL_S", 0.0)
+    monkeypatch.setattr(config, "FACE_ID_TURN_INTERVAL_S", 0.0)
     me = np.random.default_rng(1).normal(size=128)
+    pose = {"yaw": 0.0}
     embedded: list[int] = []
 
     class Camera:
@@ -339,7 +341,7 @@ def test_face_id_learns_during_head_movement_steps_and_protects_the_profile(monk
 
     class Tracker:
         def __init__(self, num_faces=1): pass
-        def process_all(self, image, t, seq): return [SimpleNamespace()]
+        def process_all(self, image, t, seq): return [SimpleNamespace(yaw=pose["yaw"], pitch=0.0)]
         def close(self): pass
 
     monkeypatch.setattr(identity, "SFace", Encoder)
@@ -350,21 +352,31 @@ def test_face_id_learns_during_head_movement_steps_and_protects_the_profile(monk
     assert rt._calibrator is not None and rt._face_id is not None   # no step of its own: calibration starts now
     time.sleep(0.1)
     assert embedded == []                                      # not sampling until a head-movement step
-    rt._face_id.active = True                                  # what the pipeline sets during neutral / range steps
-    deadline = time.monotonic() + 3.0
-    while rt._face_id.samples < config.FACE_ID_SAMPLES and time.monotonic() < deadline:
-        time.sleep(0.01)
-    rt._face_id.active = False                                 # expression steps: no samples
+    def run_step(step, yaw, expect):
+        pose["yaw"] = yaw
+        rt._face_id.step = step                                # what the pipeline sets for each calibration step
+        deadline = time.monotonic() + 3.0
+        while rt._face_id.samples < expect and time.monotonic() < deadline:
+            time.sleep(0.005)
+        time.sleep(0.05)
+        rt._face_id.step = None
+        assert rt._face_id.samples == expect
+
+    run_step("neutral", 0.0, config.FACE_ID_NEUTRAL_SAMPLES)   # mostly the relaxed, straight-on face
+    run_step("yaw_left", -18.0, config.FACE_ID_NEUTRAL_SAMPLES + config.FACE_ID_TURN_SAMPLES)   # a few per turn
+    run_step("yaw_right", 40.0, config.FACE_ID_NEUTRAL_SAMPLES + config.FACE_ID_TURN_SAMPLES)  # too far: none
     count = len(embedded)
     time.sleep(0.1)
-    assert count == config.FACE_ID_SAMPLES and len(embedded) == count
+    assert len(embedded) == count                              # no step (expressions): no samples
+    total = config.FACE_ID_NEUTRAL_SAMPLES + config.FACE_ID_TURN_SAMPLES
     rt._face_id.finish()                                       # the calibration ended
+    deadline = time.monotonic() + 3.0
     rt._calibrator = None
     while not rt._face_id.done and time.monotonic() < deadline:
         time.sleep(0.01)
     rt._face_id_ended()
     assert [e["data"] for e in rt.pop_events() if e["name"] == "face_id_done"] == [
-        {"saved": True, "reason": "", "samples": config.FACE_ID_SAMPLES}]
+        {"saved": True, "reason": "", "samples": total}]
     assert identity.identity_required("sam") and rt._identity_required and rt._face_id is None
 
 

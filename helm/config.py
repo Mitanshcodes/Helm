@@ -39,9 +39,14 @@ CALIB_EXPRESSION_S = 4.0           # typical length of an expression step (for t
 CALIB_EXPRESSION_MAX_S = 10.0      # an expression step ends after 3 repetitions, or at this time
 CALIB_REP_LEVEL = 0.12             # above neutral: a repetition starts; it ends below half of this
 CALIB_MAX_DT_S = 0.1               # longest frame gap that counts toward a step's timer
-FACE_ID_SAMPLES = 16               # Face ID: face references taken during a named profile's full calibration...
-FACE_ID_MIN_SAMPLES = 8            # ...at least this many (P3's enrollment minimum), or it is skipped, not saved
-FACE_ID_INTERVAL_S = 0.75          # one every this long, only in the head-movement steps (about 12 s of them)
+# Face ID references, taken during a named profile's full calibration. Mostly the relaxed, straight-on face (how a
+# player looks while playing), plus a few from each head turn so steering does not lose recognition.
+FACE_ID_NEUTRAL_SAMPLES = 12       # from the "relax your face" step...
+FACE_ID_NEUTRAL_INTERVAL_S = 0.2   # ...one this often (the step lasts about 3 s)
+FACE_ID_TURN_SAMPLES = 3           # from each head-turn step...
+FACE_ID_TURN_INTERVAL_S = 0.5      # ...one this often...
+FACE_ID_MAX_TURN_DEG = 25.0        # ...and only up to this far from straight (further turns are not how anyone plays)
+FACE_ID_MIN_SAMPLES = 8            # fewer than this in all (P3's enrollment minimum): skipped, not saved
 CALIB_NOD_MIN_DEG = 5.0            # the nod step: a nod counts once the chin is this far up...
 CALIB_NOD_FRACTION = 0.5           # ...or this share of the measured chin-up range, whichever is more
 CALIB_NOD_MIN_FRAMES = 3           # frames past that a nod needs (a blip is not a take)

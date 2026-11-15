@@ -69,8 +69,10 @@ FACE_ID_STEPS = ("neutral", "yaw_left", "yaw_right", "pitch_up", "pitch_down")
 class FaceEnrollment:
     """Face ID, learned during an ordinary full calibration of a named profile, with no step of its own (P3's
     `helm.identity` does the recognition; this replaces its command-line `enroll`). While the pipeline marks it
-    `active` (the head-movement steps, FACE_ID_STEPS), a worker thread takes one sample every FACE_ID_INTERVAL_S
-    until it has FACE_ID_SAMPLES, keeping an SFace reference only when exactly one face is in view. When the
+    `step` (one of FACE_ID_STEPS), a worker thread takes samples: FACE_ID_NEUTRAL_SAMPLES of the relaxed,
+    straight-on face in the neutral step (what the player looks like while playing, so it must dominate), then up to
+    FACE_ID_TURN_SAMPLES from each head turn within FACE_ID_MAX_TURN_DEG. A sample is kept only when exactly one face
+    is in view. When the
     calibration ends the pipeline calls finish(): with at least FACE_ID_MIN_SAMPLES it saves them with
     `identity.save_template`. Nothing here runs on the pipeline thread."""
 
@@ -79,7 +81,7 @@ class FaceEnrollment:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._finish = threading.Event()
-        self.active = False                        # set by the pipeline: a head-movement step is running
+        self.step: str | None = None               # set by the pipeline: the head-movement step running, or None
         self._samples = 0
         self.done = False
         self.saved = False
@@ -113,20 +115,27 @@ class FaceEnrollment:
             encoder = identity.SFace()
             tracker = FaceTracker(num_faces=4)     # to tell "just you" from "someone else is in view"
             vectors, seq, next_at = [], -1, 0.0
+            per_step: dict[str, int] = {}
             while not self._stop.is_set() and not self._finish.is_set():
                 got = self._camera.wait_latest(seq, timeout=0.2)
                 if got is None:
                     continue
                 seq = got[2]
-                if not self.active or len(vectors) >= config.FACE_ID_SAMPLES or time.monotonic() < next_at:
+                step = self.step
+                neutral = step == "neutral"
+                quota = config.FACE_ID_NEUTRAL_SAMPLES if neutral else config.FACE_ID_TURN_SAMPLES
+                if step is None or per_step.get(step, 0) >= quota or time.monotonic() < next_at:
                     continue
                 image, capture_ns, seq = got
-                next_at = time.monotonic() + config.FACE_ID_INTERVAL_S
+                next_at = time.monotonic() + (config.FACE_ID_NEUTRAL_INTERVAL_S if neutral else config.FACE_ID_TURN_INTERVAL_S)
                 faces = tracker.process_all(image, capture_ns, seq)
                 if len(faces) != 1:                # nobody, or someone else in view: not a reference
                     continue
+                if not neutral and max(abs(faces[0].yaw), abs(faces[0].pitch)) > config.FACE_ID_MAX_TURN_DEG:
+                    continue                       # turned further than anyone plays: a poor reference
                 try:
                     vectors.append(encoder.embed(image, faces[0]))
+                    per_step[step] = per_step.get(step, 0) + 1
                 except ValueError:                 # too small or turned too far: not a usable reference
                     continue
                 with self._lock:
@@ -545,7 +554,7 @@ class Runtime:
         if self._calibrator is not None:
             progress = self._calibrator.feed(f, enrollment_t_s)
             if self._face_id is not None:
-                self._face_id.active = f.face and progress.step in FACE_ID_STEPS
+                self._face_id.step = progress.step if f.face and progress.step in FACE_ID_STEPS else None
             if progress.done:
                 if self._face_id is not None:
                     self._face_id.finish()
