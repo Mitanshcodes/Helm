@@ -1,6 +1,10 @@
 <!-- OWNER: P4 -->
 # Helm
 
+This is the experimental ML branch of the [Helm-ML fork](https://github.com/rishabhgoel0213/Helm-ML).
+The planned face-identity and richer gesture-feature work is described in
+[docs/EXPERIMENTAL_ML.md](docs/EXPERIMENTAL_ML.md). These features are not implemented yet.
+
 **A game controller you steer with your face. Play with whatever moves.**
 
 Helm turns a webcam into an Xbox 360 controller, designed for gamers with limited hand and arm
