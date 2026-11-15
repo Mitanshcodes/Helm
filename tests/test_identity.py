@@ -114,12 +114,17 @@ def runtime(tmp_path, monkeypatch):
     return Runtime(parse_args(['--mock', '--player', 'b', '--output', 'null', '--serial', 'off', '--no-server']))
 
 
+FACE = np.tile([[.4, .4], [.6, .6]], (239, 1)).astype(np.float32)   # 478 landmarks in a box (.4, .4)-(.6, .6)
+
+
 def step(rt, seq, t_s, admitted):
-    rt._identity_allowed = admitted
-    rt._identity_frame_seq = seq
-    rt._identity_status.update(allowed=admitted, state='recognized' if admitted else 'rejected')
+    """One tracked frame of the face at FACE. Admitted = the face check last verified a face at that spot (gestures
+    run at full rate on the tracker; the check runs beside it, main._follow_verified ties the two together)."""
+    rt._verified_box = (.4, .4, .6, .6) if admitted else None
+    rt._verified_t = time.monotonic()
+    rt._identity_status.update(state='recognized' if admitted else 'rejected')
     ns = round(t_s*1e9)
-    rt._step(FrameFeatures(seq, ns, ns, True))
+    rt._step(FrameFeatures(seq, ns, ns, True, landmarks=FACE))
 
 
 def test_rejection_immediately_neutralizes_auto_output_without_face_loss_grace(tmp_path, monkeypatch):
@@ -217,3 +222,22 @@ def test_offline_presence_labels_do_not_claim_ownership_without_boxes():
     summary = summarize(rows)
     assert summary['presence_labels']['admitted_when_target_absent'] == 1
     assert 'ownership_labels' not in summary
+
+
+def test_gestures_follow_the_verified_face_between_checks(tmp_path, monkeypatch):
+    """Tracking runs at full rate; the face check runs beside it. Control follows the face the check last verified
+    while it moves, never a face somewhere else, and stops when no check has confirmed it for IDENTITY_HOLD_S."""
+    from helm import config
+    rt = runtime(tmp_path, monkeypatch)
+
+    def frame(x0):
+        box = np.tile([[x0, .4], [x0 + .2, .6]], (239, 1)).astype(np.float32)
+        return FrameFeatures(1, 0, 0, True, landmarks=box)
+
+    rt._verified_box, rt._verified_t = (.4, .4, .6, .6), time.monotonic()
+    assert rt._follow_verified(frame(.42))                    # the same face, moved a little
+    assert rt._follow_verified(frame(.46))                    # keeps following it
+    assert not rt._follow_verified(frame(.05))                # someone else, on the other side of the picture
+    rt._verified_t = time.monotonic() - config.IDENTITY_HOLD_S - .1
+    assert not rt._follow_verified(frame(.46))                # no fresh "recognized" check: control stops
+    rt.stop()

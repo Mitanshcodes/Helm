@@ -41,6 +41,9 @@ CALIB_REP_LEVEL = 0.12             # above neutral: a repetition starts; it ends
 CALIB_MAX_DT_S = 0.1               # longest frame gap that counts toward a step's timer
 # Face ID references, taken during a named profile's full calibration. Mostly the relaxed, straight-on face (how a
 # player looks while playing), plus a few from each head turn so steering does not lose recognition.
+IDENTITY_CHECK_INTERVAL_S = 0.15   # Face ID checks the camera about 6-7 times a second, beside the gesture tracker
+IDENTITY_HOLD_S = 1.0              # the verified face keeps control this long without a new "recognized" check
+IDENTITY_FOLLOW_IOU = 0.3          # between checks, the tracked face must overlap the last verified face this much
 FACE_ID_NEUTRAL_SAMPLES = 12       # from the "relax your face" step...
 FACE_ID_NEUTRAL_INTERVAL_S = 0.2   # ...one this often (the step lasts about 3 s)
 FACE_ID_TURN_SAMPLES = 3           # from each head-turn step...

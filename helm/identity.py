@@ -211,8 +211,10 @@ def unprotected_status(player):
 
 class IdentityWorker:
     """Latest-result worker; camera pixels, identity and gesture observations stay frame-aligned."""
-    def __init__(self, camera, model_path=MODEL_PATH):
-        self.camera, self.model_path = camera, model_path
+    def __init__(self, camera, model_path=MODEL_PATH, interval_s=0.0):
+        # interval_s > 0: at most one check per interval (start to start), leaving the CPU to the gesture tracker,
+        # which no longer waits for this worker (main.py follows the last verified face between checks).
+        self.camera, self.model_path, self.interval_s = camera, model_path, interval_s
         self._cond = threading.Condition()
         self._stop = threading.Event()
         self._generation = 0
@@ -334,6 +336,8 @@ class IdentityWorker:
                     self._publish(generation, status=dict(protected=True, allowed=False, state='error', player=player,
                                   face_landmarker_num_faces=4,
                                   reason=f'{type(e).__name__}: {e}'))
+                if self.interval_s > 0:
+                    self._stop.wait(max(0.0, self.interval_s - (time.perf_counter_ns() - started) / 1e9))
         finally:
             if tracker:
                 tracker.close()

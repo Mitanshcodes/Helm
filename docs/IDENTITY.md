@@ -74,6 +74,25 @@ Default/guest and judge remain explicitly unprotected. Enrolled profiles are loc
 on recognition failure, stale results, missing/damaged references or missing model weights.
 Feature-only mock/replay has no identity pixels and cannot unlock an enrolled profile.
 
+## Live control: tracking at full rate, the face check beside it (P1, 2026-11-15)
+
+The original rule, that the gesture frame must be the face check's own frame, made every frame wait for the check
+(4-face tracking plus SFace on each face, 45-50 ms on the demo laptop and more with people behind the player). On
+the Windows laptop that took Helm down to 11-26 fps, and lower with company. Now:
+
+- **Tracking:** the normal single-face tracker runs at the camera's full rate, exactly as for an unprotected
+  profile.
+- **The face check:** `IdentityWorker(interval_s=0.15)` checks about 6-7 times a second (start to start, so P3's
+  0.30 s confirmation gap still holds).
+- **Between checks:** `main._follow_verified` lets a tracked face control the pad only while it overlaps (IoU 0.3 or
+  more) the box of the face the last "recognized" check selected. The box follows that face as it moves.
+- **When control stops:** a rejection, ambiguity, error or reload clears the verified face at once. With no fresh
+  "recognized" check for `IDENTITY_HOLD_S` (1 s), control stops. A stalled camera neutralizes the pad.
+- **Measured** (real MediaPipe + SFace, the check slowed to about 91 ms): 11.0 fps before, 26.1 fps after (the test
+  camera's maximum), recognized throughout.
+- **Trade-off:** for up to 1 s after a check, control follows the verified face by position, not by a per-frame
+  identity. Another face taking exactly that spot within that time is the remaining gap.
+
 ## Model and admission policy
 
 The model is OpenCV Zoo's SFace MobileFaceNet ONNX model:

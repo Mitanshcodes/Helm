@@ -103,6 +103,20 @@ def reset_profiles() -> list[str]:
     return deleted
 
 
+def _face_box(landmarks) -> tuple[float, float, float, float]:
+    p = np.asarray(landmarks, np.float32)
+    return float(p[:, 0].min()), float(p[:, 1].min()), float(p[:, 0].max()), float(p[:, 1].max())
+
+
+def _overlap(a: tuple, b: tuple) -> float:
+    """Intersection over union of two (x0, y0, x1, y1) boxes."""
+    w = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    h = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = w * h
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
 def forget_face(player: str) -> bool:
     """Turn Face ID off for a profile: its references and the "required" marker are moved aside (kept as
     identity.json.off for recovery, never shared: profiles/**/identity* is git-ignored). True if it had Face ID."""
@@ -355,7 +369,10 @@ class Runtime:
         self._dev_fit_threads = []
         self._dev_end_after_frame = False
         self._video_frame = None
-        self._identity_worker = IdentityWorker(self._camera) if self._camera else None
+        self._identity_worker = (IdentityWorker(self._camera, interval_s=config.IDENTITY_CHECK_INTERVAL_S)
+                                 if self._camera else None)
+        self._verified_box: tuple[float, float, float, float] | None = None   # the last verified face, followed
+        self._verified_t = 0.0                     # monotonic time of the last "recognized" check
         self._face_id: FaceEnrollment | None = None   # Face ID learning during a full calibration
         self._face_id_relearning = False           # protection is off while that calibration runs
         self._identity_generation = 0
@@ -560,11 +577,10 @@ class Runtime:
                     self._multiplayer_tick()
                     continue
                 f = self._next_features()
-                if f is None:                      # no new frame: keep the pad safe
-                    # A confirmed observation may bridge a short no-new-result interval, but only
-                    # within the identity worker's capture-based freshness deadline.
-                    if not (self._identity_required and self._identity_allowed):
-                        self._pad.apply(ControlState(t_output_ns=time.perf_counter_ns()))
+                if f is None:                      # no new frame (camera stalled): keep the pad safe
+                    self._pad.apply(ControlState(t_output_ns=time.perf_counter_ns()))
+                    if self._identity_required:
+                        self._snapshot = self._snapshot | {'identity': dict(self._identity_status)}
                     continue
                 self._step(f)
             except Exception as e:
@@ -701,24 +717,9 @@ class Runtime:
                                              reason='Protected profiles require camera pixels; feature replay is locked')
             return f
         if self._identity_required:
-            result, status = self._identity_worker.wait_latest(self._identity_last_seq, timeout=.1)
-            self._identity_status = status
-            self._identity_allowed = bool(status.get('allowed', False))
-            if result is None or result.generation != self._identity_generation:
-                if result is not None:
-                    self._identity_allowed = False
-                if not self._identity_allowed:
-                    self._set_identity_admitted(False)
-                    self._sip.poll()
-                    self._snapshot = self._build_snapshot(None, None, {}, ControlState(), self._paused_identity_progress())
-                else:
-                    self._snapshot = self._snapshot | {'identity': dict(status)}
-                return None
-            self._identity_last_seq = self._identity_frame_seq = result.frame.seq
-            self._last_seq = result.frame.seq
-            self._video_frame = result.image
-            self._preview = (result.image, result.frame.landmarks)
-            return result.frame
+            self._poll_identity()                  # never waits: the face check runs beside the tracker
+        if self._camera is None:
+            return None
         got = self._camera.wait_latest(self._last_seq, timeout=0.5)
         if got is None:
             return None
@@ -736,7 +737,9 @@ class Runtime:
         self._handle_requests()
 
         if self._identity_required:
-            admitted = self._identity_allowed and f.face and self._identity_frame_seq == f.seq
+            admitted = self._follow_verified(f)
+            self._identity_allowed = admitted
+            self._identity_status["allowed"] = admitted
             self._set_identity_admitted(admitted)
             if not admitted:
                 self._identity_blocked_step(f)
@@ -851,7 +854,42 @@ class Runtime:
                 self._dev_end_after_frame = False
         self._snapshot = self._build_snapshot(f, s, act, out, progress)
 
+    def _poll_identity(self) -> None:
+        """Pipeline, every frame of a protected profile: take the face check's newest result, if any. A
+        "recognized" result marks that face (its box) as verified; a rejection, ambiguity, error or reload clears it,
+        so control stops at once."""
+        result, status = self._identity_worker.wait_latest(self._identity_last_seq, timeout=0)
+        if result is not None and result.generation == self._identity_generation:
+            self._identity_last_seq = result.frame.seq
+            status = dict(result.status)
+            if status.get("allowed") and result.frame.face and result.frame.landmarks is not None:
+                self._verified_box = _face_box(result.frame.landmarks)
+                self._verified_t = time.monotonic()
+            elif status.get("state") != "confirming":
+                self._verified_box = None
+        elif status.get("state") in ("error", "loading"):
+            self._verified_box = None
+        elif self._verified_box is not None and status.get("state") in ("stale", "waiting"):
+            status = {**self._identity_status, "state": "recognized"}   # between checks: still the verified face
+        if self._verified_box is None or time.monotonic() - self._verified_t > config.IDENTITY_HOLD_S:
+            self._identity_allowed = False
+            self._set_identity_admitted(False)
+        self._identity_status = {**status, "allowed": self._identity_allowed}
+
+    def _follow_verified(self, f: FrameFeatures) -> bool:
+        """Is this frame's face the verified one? Yes while the last "recognized" check is under IDENTITY_HOLD_S
+        old and this face overlaps where the verified face was (then the box follows it as it moves)."""
+        if (not f.face or f.landmarks is None or self._verified_box is None
+                or time.monotonic() - self._verified_t > config.IDENTITY_HOLD_S):
+            return False
+        box = _face_box(f.landmarks)
+        if _overlap(box, self._verified_box) < config.IDENTITY_FOLLOW_IOU:
+            return False                           # another face took the tracker's attention
+        self._verified_box = box
+        return True
+
     def _configure_identity(self):
+        self._verified_box = None
         # While a full calibration relearns this profile's face, the old references must not gate it: if they no
         # longer match (an old enrollment, new lighting), the calibration would wait forever for "the enrolled
         # person" and never learn the new face.
