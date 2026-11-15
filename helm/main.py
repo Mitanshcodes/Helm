@@ -19,7 +19,7 @@ import numpy as np
 from helm import coach, config, profiles
 from helm.dev_recording import DevRecording
 from helm.adapt import FatigueTracker
-from helm.calibration import Calibrator, default_calibration
+from helm.calibration import NOD_MOVE, Calibrator, default_calibration
 from helm.capture import Camera
 from helm.contracts import AXES, BLENDSHAPE_NAMES, ControlState, FrameFeatures, Progress, Signals
 from helm.filters import Normalizer
@@ -406,6 +406,7 @@ class Runtime:
                     self._dev_session.calibration(self._calib)
                     self._dev_end_after_frame = self._dev_session.kind == 'calibration'
                 notes = self._calibrator.notes
+                nod_takes, not_nod = self._calibrator.nod_samples()
                 self._calibrator = None
                 self._normalizer.set_calibration(self._calib)
                 self._fatigue = FatigueTracker()   # levels are on a new scale: old baselines no longer compare
@@ -413,7 +414,9 @@ class Runtime:
                 self._worker(profiles.save_calibration, self._calib)
                 self._event("calibration_done", {"mode": self._calib.mode, "reliable": list(self._calib.reliable),
                                                  "range": {a: list(r) for a, r in self._calib.range.items()},
-                                                 "notes": notes})
+                                                 "notes": notes, "nod_takes": len(nod_takes)})
+                if len(nod_takes) >= 2:            # the nod step's repetitions train the learned "nod_up" move
+                    self._worker(self._prepare_nod, self._calib, dict(self._normalizer.gain), nod_takes, not_nod)
                 # Breath range is measured straight after the face, while the player is still in
                 # calibration mode, and only when a sensor is actually attached.
                 if self._sip.connected:
@@ -617,6 +620,40 @@ class Runtime:
             self._event("gesture_trained", data)
 
         self._use_model(model, then=report)
+
+    def _prepare_nod(self, calib, gains: dict[str, float], takes: list, not_nod: list) -> None:
+        """Worker: turn the calibration's nod repetitions (and its not-a-nod steps) into model data, as the
+        pipeline would have seen them with the new calibration, then hand the model to the pipeline thread."""
+        def deltas(frames) -> np.ndarray:
+            norm = Normalizer(calib)               # a fresh one per segment, like a recording starting
+            norm.set_gains(gains)
+            return np.stack([norm.update(f).delta for f in frames])
+
+        model = self._model.copy() if self._model else GestureModel()
+        model.remove(NOD_MOVE)                     # a new calibration replaces the old nods
+        for frames in takes:
+            model.add_take(NOD_MOVE, deltas(frames))
+        for frames in not_nod:
+            if frames:
+                model.add_negative(deltas(frames))
+        self._request("adopt_nod", model)
+
+    def _do_adopt_nod(self, model: GestureModel) -> None:
+        """Pipeline: use the model with the new nod, and put the nod on X when X is free or already had it."""
+        def report(accuracy: dict[str, float]) -> None:
+            self._event("gesture_trained", {"name": NOD_MOVE, "accuracy": accuracy.get(NOD_MOVE), "calibration": True})
+
+        self._use_model(model, then=report)
+        buttons = list(self._mapping.get("buttons") or [])
+        on_x = next((b.get("gesture") for b in buttons if b.get("target") == "X"), None)
+        if on_x not in (None, NOD_MOVE):
+            return
+        mapping = json.loads(json.dumps(self._mapping))
+        mapping.setdefault("gestures", {})[NOD_MOVE] = {"kind": "learned", "on": config.LEARNED_ON, "off": config.LEARNED_OFF}
+        mapping["buttons"] = [b for b in buttons if b.get("target") != "X"] + [{"gesture": NOD_MOVE, "target": "X", "mode": "tap"}]
+        self._do_set_mapping(mapping)
+        if self.player not in profiles.SHARED_PLAYERS:
+            self._worker(profiles.save_mapping, self.player, self.game, mapping)
 
     def _use_model(self, model: GestureModel, then) -> None:
         """Switch to `model` now (it predicts with its previous classifier), fit it and save it on a worker.

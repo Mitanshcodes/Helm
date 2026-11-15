@@ -76,6 +76,7 @@ const CALIBRATION: Step[] = [
   { step: "brow_raise", prompt: "Raise your eyebrows, three times", seconds: 2.5 },
   { step: "jaw_open", prompt: "Open your mouth wide, three times", seconds: 2.5 },
   { step: "smile", prompt: "Smile wide, three times", seconds: 2.5 },
+  { step: "nod_up", prompt: "Nod your chin up and hold a moment, three times", seconds: 2.5 },
 ];
 // Timings mirror what P3's TakeRecorder is expected to send; the dashboard reads them, it never assumes them.
 const TAKES = 10;

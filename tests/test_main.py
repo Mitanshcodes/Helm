@@ -286,3 +286,28 @@ def test_steering_sensitivity_comes_from_the_mapping_and_is_published():
     from helm.contracts import ControlState
     rt._snapshot = rt._build_snapshot(None, None, {}, ControlState(), None)
     assert rt.snapshot()["ranges"]["yaw"] == [pytest.approx(base[0] / 2, abs=0.1), pytest.approx(base[1] / 2, abs=0.1)]
+
+
+def test_calibration_nods_train_the_learned_move_and_land_on_x(monkeypatch, tmp_path):
+    from helm.calibration import default_calibration
+    from helm.contracts import FrameFeatures
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server", "--player", "sam"]))
+    calib = default_calibration("sam", mode="full")
+    rng = np.random.default_rng(0)
+
+    def frames(n, pitch=0.0, yaw=0.0):
+        return [FrameFeatures(seq=i, t_capture_ns=i * 33_000_000, t_infer_ns=i * 33_000_000, face=True,
+                              pitch=pitch + rng.normal(0, 0.3), yaw=yaw + rng.normal(0, 0.3)) for i in range(n)]
+
+    takes = [frames(12, pitch=15.0) for _ in range(3)]
+    not_nod = [frames(30), frames(30, yaw=-15.0), frames(30, yaw=15.0)]
+    rt._prepare_nod(calib, {}, takes, not_nod)                     # normally on a worker
+    rt._handle_requests()
+    assert "nod_up" in rt._learned()
+    assert {"gesture": "nod_up", "target": "X", "mode": "tap"} in rt._mapping["buttons"]
+    assert rt._mapping["gestures"]["nod_up"]["kind"] == "learned"
+    deadline = time.monotonic() + 3.0                            # fit and save happen on a worker
+    while not (tmp_path / "sam" / "SuperTuxKart.json").exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert json.loads((tmp_path / "sam" / "SuperTuxKart.json").read_text())["gestures"]["nod_up"]["kind"] == "learned"
