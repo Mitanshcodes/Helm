@@ -67,6 +67,13 @@ const ART: Record<IconName, JSX.Element> = {
       <path d="M5.5 13.5q-1 2 .5 3.5M18.5 13.5q1 2-.5 3.5" />
     </>
   ),
+  nose: (
+    <>
+      <path d="M7.5 10.5l3-.8M16.5 10.5l-3-.8" />
+      <path d="M12 11v3.2l-1.4.8M10 12.6l-1.2-.6M14 12.6l1.2-.6" />
+      <path d="M9.5 16.5h5" />
+    </>
+  ),
   breath: (
     <>
       {EYES}

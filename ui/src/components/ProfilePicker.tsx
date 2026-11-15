@@ -11,7 +11,7 @@ import { FaceIcon, HelmWheel } from "./PixelIcon";
 
 const HIDDEN = new Set([DEFAULT_PLAYER, JUDGE, "demo", "demo_webcam", "tester"]);
 const TONES = ["pink", "blue", "yellow", "navy"];
-const ICONS: IconName[] = ["brow", "jaw", "cheek", "nod", "star"];
+const ICONS: IconName[] = ["brow", "jaw", "nose", "nod", "star"];
 const TILTS = [-2, 1.5, -1, 2, -1.5, 1];
 export const PROFILE_NAME = /^[A-Za-z0-9_-]{1,32}$/; // the server's rule: it becomes a folder name
 

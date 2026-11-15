@@ -5,7 +5,7 @@ import { degrees, humanize } from "./format";
 import type { Catalog, HelmState, Mapping } from "./types";
 
 export type IconName =
-  | "turn" | "nod" | "tilt" | "brow" | "smile" | "jaw" | "eyes" | "pucker" | "cheek" | "breath" | "star" | "auto" | "dot";
+  | "turn" | "nod" | "tilt" | "brow" | "smile" | "jaw" | "eyes" | "pucker" | "cheek" | "nose" | "breath" | "star" | "auto" | "dot";
 
 export interface MoveRow {
   id: string;
@@ -59,6 +59,7 @@ export function iconFor(name: string, mapping: Mapping | null, learned: string[]
   if (/eyes|blink/i.test(text)) return "eyes";
   if (/pucker/i.test(text)) return "pucker";
   if (/cheek/i.test(text)) return "cheek";
+  if (/nose|sneer/i.test(text)) return "nose";
   return "dot";
 }
 

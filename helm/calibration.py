@@ -18,7 +18,8 @@ _FULL_STEPS = (
     ("brow_raise", config.CALIB_EXPRESSION_S, "Raise your eyebrows, three times", ("expr", "browInnerUp")),
     ("jaw_open", config.CALIB_EXPRESSION_S, "Open your mouth wide, three times", ("expr", "jawOpen")),
     ("smile", config.CALIB_EXPRESSION_S, "Smile wide, three times", ("expr", "mouthSmileLeft", "mouthSmileRight")),
-    ("cheek_puff", config.CALIB_EXPRESSION_S, "Puff out your cheeks, three times", ("expr", "cheekPuff")),
+    ("nose_scrunch", config.CALIB_EXPRESSION_S, "Scrunch up your nose, three times",
+     ("expr", "noseSneerLeft", "noseSneerRight")),
 )
 _QUICK_STEPS = (("neutral", config.CALIB_NEUTRAL_QUICK_S, _NEUTRAL[2], ("neutral",)),)
 _DIRECTION_WORD = {("yaw", -1): "left", ("yaw", 1): "right", ("pitch", 1): "up", ("pitch", -1): "down"}

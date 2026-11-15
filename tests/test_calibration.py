@@ -32,7 +32,7 @@ def test_top_peaks():
 class Player:
     """Synthetic player that follows the calibration prompts."""
 
-    def __init__(self, yaw_left=20.0, yaw_right=25.0, up=12.0, down=2.0, weak=("cheekPuff",), neutral_yaw=3.0,
+    def __init__(self, yaw_left=20.0, yaw_right=25.0, up=12.0, down=2.0, weak=("noseSneerLeft",), neutral_yaw=3.0,
                  react_s=0.0):
         self.yaw_left, self.yaw_right, self.up, self.down = yaw_left, yaw_right, up, down
         self.weak, self.neutral_yaw = weak, neutral_yaw
@@ -54,7 +54,7 @@ class Player:
         elif step == "pitch_down":
             pitch -= self.down
         name = {"brow_raise": "browInnerUp", "jaw_open": "jawOpen", "smile": "mouthSmileLeft",
-                "cheek_puff": "cheekPuff"}.get(step)
+                "nose_scrunch": "noseSneerLeft"}.get(step)
         if name:
             amp = 0.1 if name in self.weak else 0.7
             blend[BLENDSHAPE_NAMES.index(name)] += amp * max(0.0, math.sin(2 * math.pi * t_in_step * 0.75))
@@ -81,7 +81,7 @@ def test_full_calibration_measures_the_player():
     progs, t = run(cal, Player())
     steps = [p.step for p in progs if p.active]
     assert list(dict.fromkeys(steps)) == ["neutral", "yaw_left", "yaw_right", "pitch_up", "pitch_down",
-                                          "brow_raise", "jaw_open", "smile", "cheek_puff"]
+                                          "brow_raise", "jaw_open", "smile", "nose_scrunch"]
     assert t < 45
     overall = [p.overall for p in progs]
     assert overall == sorted(overall) and progs[-1].overall == 1.0
@@ -97,7 +97,7 @@ def test_full_calibration_measures_the_player():
     assert c.blend_peak["browInnerUp"] == pytest.approx(0.72, abs=0.02)
     for name in ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight"):
         assert name in c.reliable
-    assert "cheekPuff" not in c.reliable                            # 0.1 above neutral is too weak
+    assert "noseSneerLeft" not in c.reliable                        # 0.1 above neutral is too weak
     assert set(config.ASSUMED_RELIABLE) <= set(c.reliable)
     assert len(c.blend_neutral) == N_BLEND and c.blend_neutral[0] == pytest.approx(0.02)
 
@@ -133,8 +133,8 @@ def test_expression_step_ends_after_three_reps_and_weak_ones_are_noted():
     progs, _ = run(cal, Player())
     brow = [p for p in progs if p.step == "brow_raise"]
     assert len(brow) / FPS < 3.5                                          # three quick reps: no waiting
-    assert "cheekPuff" not in cal.result().reliable
-    assert any("Cheek puff" in n and "by hand" in n for n in cal.notes)
+    assert "noseSneerLeft" not in cal.result().reliable
+    assert any("Nose scrunch" in n and "by hand" in n for n in cal.notes)
 
 
 def test_range_step_gives_up_on_no_movement():
@@ -188,7 +188,7 @@ def test_weak_expression_keeps_the_default_scale():
     cal = Calibrator("sam", "full")
     run(cal, Player())
     c = cal.result()
-    assert "cheekPuff" not in c.blend_peak and "cheekPuff" not in c.reliable
+    assert "noseSneerLeft" not in c.blend_peak and "noseSneerLeft" not in c.reliable
     assert c.blend_peak["jawOpen"] - c.blend_neutral[BLENDSHAPE_NAMES.index("jawOpen")] >= config.CALIB_MIN_SPAN
 
 

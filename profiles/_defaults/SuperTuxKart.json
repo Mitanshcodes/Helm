@@ -8,14 +8,14 @@
   "gestures": {
     "brow_raise":  {"kind": "blendshape", "sources": ["browInnerUp"], "on": 0.6, "off": 0.4, "min_hold_ms": 100},
     "smile":       {"kind": "blendshape", "sources": ["mouthSmileLeft", "mouthSmileRight"], "combine": "max", "on": 0.6, "off": 0.4, "min_hold_ms": 100},
-    "cheek_puff":  {"kind": "blendshape", "sources": ["cheekPuff"], "on": 0.6, "off": 0.4, "min_hold_ms": 100},
+    "nose_scrunch": {"kind": "blendshape", "sources": ["noseSneerLeft", "noseSneerRight"], "combine": "max", "on": 0.6, "off": 0.4, "min_hold_ms": 100},
     "jaw_open":    {"kind": "blendshape", "sources": ["jawOpen"], "on": 0.7, "off": 0.45, "min_hold_ms": 100},
     "eyes_closed": {"kind": "blendshape", "sources": ["eyeBlinkLeft", "eyeBlinkRight"], "combine": "min", "on": 0.85, "off": 0.6}
   },
   "buttons": [
     {"gesture": "brow_raise", "target": "A", "mode": "tap"},
     {"gesture": "smile",      "target": "B", "mode": "tap"},
-    {"gesture": "cheek_puff", "target": "X", "mode": "tap"},
+    {"gesture": "nose_scrunch", "target": "X", "mode": "tap"},
     {"gesture": "jaw_open",   "target": "Y", "mode": "tap"}
   ],
   "auto": {},

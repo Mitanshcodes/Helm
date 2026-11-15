@@ -50,7 +50,7 @@ RELIABLE_MIN_REACH = 0.8           # reliable only if the real move reaches this
 # Calibration never prompts for these, so they are trusted without a check: blinks drive the pause
 # gesture in every mapping, and quick mode also trusts the two expressions the judge profile uses.
 ASSUMED_RELIABLE = ("eyeBlinkLeft", "eyeBlinkRight")
-QUICK_ASSUMED_RELIABLE = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight", "cheekPuff")
+QUICK_ASSUMED_RELIABLE = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight", "noseSneerLeft", "noseSneerRight")
 
 FACE_LOST_MS = 200                 # pad goes neutral after this long without a face
 STATS_WINDOW = 60                  # frames in the rolling fps and latency medians
