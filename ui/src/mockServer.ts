@@ -17,7 +17,6 @@ const MAPPING: Mapping = {
   gestures: {
     brow_raise: { kind: "blendshape", sources: ["browInnerUp"], on: 0.6, off: 0.4 },
     smile: { kind: "blendshape", sources: ["mouthSmileLeft", "mouthSmileRight"], combine: "max", on: 0.6, off: 0.4 },
-    nose_scrunch: { kind: "blendshape", sources: ["noseSneerLeft", "noseSneerRight"], combine: "max", on: 0.6, off: 0.4 },
     jaw_open: { kind: "blendshape", sources: ["jawOpen"], on: 0.7, off: 0.45 },
     eyes_closed: { kind: "blendshape", sources: ["eyeBlinkLeft", "eyeBlinkRight"], combine: "min", on: 0.85, off: 0.6 },
     hard_puff: { kind: "breath" },
@@ -28,7 +27,6 @@ const MAPPING: Mapping = {
   buttons: [
     { gesture: "brow_raise", target: "A", mode: "tap" },
     { gesture: "smile", target: "B", mode: "tap" },
-    { gesture: "nose_scrunch", target: "X", mode: "tap" },
     { gesture: "jaw_open", target: "Y", mode: "tap" },
     { gesture: "hard_puff", target: "Y", mode: "tap" },
     { gesture: "soft_puff", target: "RB", mode: "tap" },
@@ -78,7 +76,6 @@ const CALIBRATION: Step[] = [
   { step: "brow_raise", prompt: "Raise your eyebrows, three times", seconds: 2.5 },
   { step: "jaw_open", prompt: "Open your mouth wide, three times", seconds: 2.5 },
   { step: "smile", prompt: "Smile wide, three times", seconds: 2.5 },
-  { step: "nose_scrunch", prompt: "Scrunch up your nose, three times", seconds: 2.5 },
 ];
 // Timings mirror what P3's TakeRecorder is expected to send; the dashboard reads them, it never assumes them.
 const TAKES = 10;
@@ -171,7 +168,6 @@ export function startMock(onMessage: OnMessage, onStatus: OnStatus): HelmSocket 
     const levels: Record<string, number> = {
       brow_raise: 0.04 + 0.82 * bump(t % 5, 0.9),
       smile: 0.05 + 0.85 * bump((t + 4) % 9, 0.9),
-      nose_scrunch: 0.05 + 0.3 * bump((t + 2) % 11, 1.5),
       jaw_open: 0.06 + 0.75 * bump((t + 7) % 13, 1),
       eyes_closed: 0.03 + 0.95 * bump(t % 30, 7),
     };

@@ -2,7 +2,7 @@
 // The calibration card shown over the blurred moves panel: step chips (NEUTRAL, RANGE, MOVES), the engine's
 // prompt in large type, a 10-segment bar for the step, and a live detail line. Steps advance by themselves.
 import { useRef } from "react";
-import { degrees } from "../format";
+import { degrees, humanize } from "../format";
 import type { HelmState, Progress } from "../types";
 
 const RANGE_STEPS = ["yaw_left", "yaw_right", "pitch_up", "pitch_down"];
@@ -10,7 +10,6 @@ const EXPR_STEPS: [string, string, string[]][] = [
   ["brow_raise", "EYEBROWS", ["browInnerUp"]],
   ["jaw_open", "JAW", ["jawOpen"]],
   ["smile", "SMILE", ["mouthSmileLeft", "mouthSmileRight"]],
-  ["nose_scrunch", "NOSE", ["noseSneerLeft", "noseSneerRight"]],
 ];
 export type CalMode = "full" | "quick" | "breath";
 export interface BreathResult {
@@ -25,7 +24,8 @@ const isBreath = (step: string) => step.startsWith("breath");
 function chipsFor(mode: CalMode, breathConnected: boolean): string[] {
   if (mode === "quick") return ["NEUTRAL"];
   if (mode === "breath") return ["BREATH"];
-  return breathConnected ? ["NEUTRAL", "RANGE", "MOVES", "BREATH"] : ["NEUTRAL", "RANGE", "MOVES"];
+  // Full calibration ends with the custom move (a nod up Helm trains its own model on; it runs in the Wizard).
+  return breathConnected ? ["NEUTRAL", "RANGE", "MOVES", "BREATH", "CUSTOM"] : ["NEUTRAL", "RANGE", "MOVES", "CUSTOM"];
 }
 
 function groupOf(step: string, chips: string[]): number {
@@ -129,7 +129,28 @@ export function CalibrationCard(props: { state: HelmState; progress: Progress; m
   );
 }
 
-export function CalibrationDone({ state, mode, track, breath }: { state: HelmState; mode: CalMode; track: Track; breath: BreathResult | null }) {
+export interface CustomResult {
+  name: string;
+  accuracy: number | null; // leave-one-take-out, 0..1
+  target: string | null; // the button it was put on
+}
+
+/** The step before the custom move starts (while the engine switches from calibration to recording). */
+export function CustomNext({ name, training }: { name: string; training: boolean }) {
+  return (
+    <div className="setup-card">
+      <h2 className="card-title">CALIBRATING · LAST STEP · CUSTOM MOVE</h2>
+      <p className="instruction" role="status" aria-live="polite">
+        {training ? `Training Helm's model on your ${humanize(name).toLowerCase()}…` : `Last one: ${humanize(name).toLowerCase()}`}
+      </p>
+      <p className="lead">
+        {training ? "A second or two." : "Tilt your chin up when it says GO. Five tries, about 30 seconds: Helm trains its own model on them."}
+      </p>
+    </div>
+  );
+}
+
+export function CalibrationDone({ state, mode, track, breath, custom }: { state: HelmState; mode: CalMode; track: Track; breath: BreathResult | null; custom?: CustomResult | null }) {
   const reliable = new Set(state.gestures?.reliable ?? []);
   const found = EXPR_STEPS.filter(([, , sources]) => sources.some((s) => reliable.has(s)));
   const weak = EXPR_STEPS.filter(([step, , sources]) => track.steps.includes(step) && !sources.some((s) => reliable.has(s)));
@@ -144,6 +165,9 @@ export function CalibrationDone({ state, mode, track, breath }: { state: HelmSta
             `${found.length} ${found.length === 1 ? "move" : "moves"} found`,
             ...(weak.length ? [`${weak.map(([, l]) => l).join(", ")} too weak`] : []),
             ...breathPart,
+            ...(custom
+              ? [`${humanize(custom.name)} trained${custom.accuracy !== null ? ` (${Math.round(custom.accuracy * 100)}% recognized)` : ""}${custom.target ? ` · on ${custom.target}` : ""}`]
+              : []),
           ];
   return (
     <div className="setup-card">

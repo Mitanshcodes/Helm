@@ -14,8 +14,9 @@ import { MOCK, fetchProfiles, useHelmSocket } from "./useHelmSocket";
 import { useFireClicks, useSetting, useSpokenPrompts } from "./feedback";
 import { HoldClock, buildRows } from "./moves";
 import { spokenTake, useTeachFlow } from "./teach";
-import { ProfileCard } from "./components/ProfileCard";
-import { CalibrationCard, CalibrationDone, cameraHint, useCalibrationTrack, type CalMode, type BreathResult } from "./components/CalibrationCard";
+import { DEFAULT_PLAYER, JUDGE, ProfileCard } from "./components/ProfileCard";
+import { CalibrationCard, CalibrationDone, CustomNext, cameraHint, useCalibrationTrack, type CalMode, type BreathResult, type CustomResult } from "./components/CalibrationCard";
+import { putLearned } from "./mappingEdit";
 import { DevControls } from "./components/DevControls";
 import { CameraView, StatStamps } from "./components/CameraView";
 import { CoachPanel } from "./components/CoachPanel";
@@ -37,7 +38,8 @@ const QUICK = params.has("quick");
 const FACE_STEADY_MS = 1000; // a face must be visible this long before a first calibration starts by itself
 const MAPPING_ACK_MS = 600; // no "error" event within this time means set_mapping was applied
 const TOAST_MS = 6000;
-const DONE_CARD_MS = 2200; // "CALIBRATION DONE" stays this long before the dashboard comes back
+const DONE_CARD_MS = 3200; // "CALIBRATION DONE" stays this long before the dashboard comes back
+const CUSTOM_MOVE = "nod_up"; // the last step of a full calibration: Helm trains its own model on it
 
 type Screen = "intro" | "pick" | "dash";
 
@@ -60,7 +62,13 @@ export default function App() {
   const [entrance, setEntrance] = useState(0); // bumped when the dashboard appears: replays its entrance
   const calMode = useRef<CalMode>(QUICK ? "quick" : "full"); // the running (or last) calibration
   const [breathResult, setBreathResult] = useState<BreathResult | null>(null);
-  const offerTeach = useRef(false); // offer "teach a move" once the done card is gone
+  // Full calibration ends with a custom move Helm trains its own model on (a nod up, put on X): pending from the
+  // end of the face steps (and breath) until the recording starts, then running until it is trained.
+  const [customPending, setCustomPending] = useState(false);
+  const customPendingRef = useRef(false);
+  customPendingRef.current = customPending;
+  const customSeen = useRef(false); // its recording has started (progress seen)
+  const [customResult, setCustomResult] = useState<CustomResult | null>(null);
   const [profiles, setProfiles] = useState<Record<string, string[]>>({});
   const sendRef = useRef<(cmd: Command) => void>(() => {});
   const [voice, setVoice] = useSetting("voice");
@@ -78,14 +86,14 @@ export default function App() {
     if (msg.name === "breath_calibration_done") {
       // Comes after the face steps when a breath sensor is attached, or alone from "Measure my breath".
       setBreathResult({ puff: Number(data.max_puff_mv ?? 0), sip: Number(data.max_sip_mv ?? 0) });
-      setDoneAt(performance.now());
+      if (!customPendingRef.current) setDoneAt(performance.now()); // else the custom move comes first
       return;
     }
     if (msg.name === "calibration_done") {
       setBreathResult(null);
-      setDoneAt(performance.now());
-      // Right after a full calibration is when almost everyone wants their own move: offer it in place.
-      offerTeach.current = data.mode === "full";
+      setCustomResult(null);
+      if (data.mode === "full") setCustomPending(true); // the custom move starts once nothing else runs
+      else setDoneAt(performance.now());
       return;
     }
     if (msg.name === "coach_result") {
@@ -100,6 +108,7 @@ export default function App() {
       }
       setApplied(null);
       setCoach(null);
+      setCustomPending(false);
       setMappingStatus({ errors: [], applied: false });
     } else if (msg.name === "profile_reloaded") {
       setToast(`Applied your edits to ${String(data.file)}`);
@@ -211,15 +220,39 @@ export default function App() {
     if (picked.current) setEntrance((n) => n + 1);
   }, []);
 
-  // The "CALIBRATION DONE" card ends: the dashboard comes back, or "teach a move" is offered.
+  // The custom move: start it once the face steps (and breath, when a sensor is on) are over.
+  useEffect(() => {
+    if (!customPending || !state || state.progress || teach.flow || connection !== "open") return;
+    setCustomPending(false);
+    customSeen.current = false;
+    teach.custom(CUSTOM_MOVE);
+  }, [customPending, state, teach, connection]);
+
+  // Trained (or failed): put it on X when X is free or already had it, save a named profile, then "done".
+  const customFlow = teach.flow?.setup ? teach.flow : null;
+  if (customFlow && state?.progress) customSeen.current = true;
+  const hadCustom = useRef(false);
+  useEffect(() => {
+    if (customFlow?.stage === "result") {
+      const current = state?.mapping ?? applied;
+      const onX = current?.buttons?.find((b) => b.target === "X")?.gesture;
+      let target: string | null = null;
+      if (current && (!onX || onX === customFlow.name)) {
+        applyMapping(putLearned(current, "X", customFlow.name));
+        target = "X";
+        if (![DEFAULT_PLAYER, JUDGE].includes(state?.profile.player ?? "")) window.setTimeout(() => send({ cmd: "save_profile" }), 800);
+      }
+      setCustomResult({ name: customFlow.name, accuracy: customFlow.result?.accuracy ?? null, target });
+      teach.close();
+      setDoneAt(performance.now());
+    } else if (hadCustom.current && !customFlow) {
+      setDoneAt(performance.now()); // the recording stopped early (an error): finish the calibration anyway
+    }
+    hadCustom.current = customFlow !== null && customFlow.stage !== "result";
+  }, [customFlow, state, applied, applyMapping, send, teach]);
+
   const now = performance.now();
   const showingDone = now - doneAt < DONE_CARD_MS && !state?.progress;
-  const wasShowingDone = useRef(false);
-  useEffect(() => {
-    if (wasShowingDone.current && !showingDone && offerTeach.current) teachRef.current?.offer();
-    if (wasShowingDone.current && !showingDone) offerTeach.current = false;
-    wasShowingDone.current = showingDone;
-  }, [showingDone]);
   useEffect(() => {
     if (doneAt === -Infinity) return;
     const t = window.setTimeout(() => rerender((n) => n + 1), DONE_CARD_MS + 50); // re-render once it has passed
@@ -243,7 +276,10 @@ export default function App() {
         onSkip={calMode.current === "full" && !state.progress.step.startsWith("breath") ? () => send({ cmd: "calibrate", mode: "quick" }) : undefined}
       />
     );
-  else if (state && showingDone) card = <CalibrationDone state={state} mode={calMode.current} track={track} breath={breathResult} />;
+  else if (customPending || customFlow)
+    card = <CustomNext name={CUSTOM_MOVE} training={customSeen.current} />;
+  else if (state && showingDone)
+    card = <CalibrationDone state={state} mode={calMode.current} track={track} breath={breathResult} custom={calMode.current === "full" ? customResult : null} />;
   else if (state && teach.flow) {
     withCamera = teach.flow.stage === "ready_face";
     card = (

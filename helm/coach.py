@@ -270,13 +270,12 @@ def _offline(game: str, calib: Calibration, learned: list[str], has_breath: bool
 
 # Face expressions gestures are built from, in default preference order: name, blendshapes (read as their max),
 # on, off, plain words. Left and right smiles are one gesture: tracking cannot tell them apart reliably. Pucker was
-# dropped (awkward), then cheek puff (MediaPipe barely moves it) for a nose scrunch, read on either side like the
-# smile. A mapping that still names an old one keeps working.
+# dropped (awkward), then cheek puff and nose scrunch (MediaPipe barely moved them on the test laptop). The fourth
+# face button is a learned move instead: full calibration ends by training "nod_up". Old mappings keep working.
 _EXPRESSIONS = (
     ("brow_raise", ("browInnerUp",), 0.6, 0.4, "eyebrow raise"),
     ("smile", ("mouthSmileLeft", "mouthSmileRight"), 0.6, 0.4, "smile"),
     ("jaw_open", ("jawOpen",), 0.7, 0.45, "mouth open wide"),
-    ("nose_scrunch", ("noseSneerLeft", "noseSneerRight"), 0.6, 0.4, "scrunch your nose"),
 )
 
 
