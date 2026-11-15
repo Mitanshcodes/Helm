@@ -63,6 +63,39 @@ def hold_back_crosstalk(act: dict[str, float], competitors: dict[str, tuple[floa
     return out
 
 
+def forget_face(player: str) -> bool:
+    """Turn Face ID off for a profile: its references and the "required" marker are moved aside (kept as
+    identity.json.off for recovery, never shared: profiles/**/identity* is git-ignored). True if it had Face ID."""
+    from helm import identity
+    path = identity.identity_path(player)
+    had = path.exists() or path.with_name("identity_required.json").exists()
+    if path.exists():
+        path.replace(path.with_name("identity.json.off"))
+    path.with_name("identity_required.json").unlink(missing_ok=True)
+    return had
+
+
+def release_duplicate_faces(player: str, vectors: list) -> list[str]:
+    """The same person enrolled in two profiles makes recognition "ambiguous" for both, forever (the gate needs a
+    margin over every other enrolled profile). When `player` learns a face, any other profile whose references match
+    it is unlocked. Returns those profiles."""
+    from helm import identity
+    new = np.stack([identity.unit(v) for v in vectors])
+    released = []
+    for path in sorted(profiles._ROOT.glob("*/identity.json")):
+        other = path.parent.name
+        if other == player:
+            continue
+        try:
+            template = identity.load_template(path, other)
+        except Exception:
+            continue
+        if float(np.median([template.score(v) for v in new])) >= identity.THRESHOLD:
+            forget_face(other)
+            released.append(other)
+    return released
+
+
 # Calibration steps where the player moves their head (not the expression steps): Face ID samples only these.
 FACE_ID_STEPS = ("neutral", "yaw_left", "yaw_right", "pitch_up", "pitch_down")
 
@@ -87,6 +120,7 @@ class FaceEnrollment:
         self.done = False
         self.saved = False
         self.reason = ""
+        self.released: list[str] = []              # other profiles that held this same face and were unlocked
         self._thread = threading.Thread(target=self._run, name="face-id", daemon=True)
 
     def start(self) -> "FaceEnrollment":
@@ -146,6 +180,7 @@ class FaceEnrollment:
             if len(vectors) < config.FACE_ID_MIN_SAMPLES:
                 return self._done(False, "Face ID needs one clear face in view while you turn your head; it was skipped")
             identity.save_template(self.player, vectors, provenance={"source": "calibration", "frames": len(vectors)})
+            self.released = release_duplicate_faces(self.player, vectors)
             self._done(True, "")
         except FileNotFoundError:
             self._done(False, "Face ID model is not downloaded on this laptop (python -m helm.identity download)")
@@ -282,6 +317,7 @@ class Runtime:
         self._video_frame = None
         self._identity_worker = IdentityWorker(self._camera) if self._camera else None
         self._face_id: FaceEnrollment | None = None   # Face ID learning during a full calibration
+        self._face_id_relearning = False           # protection is off while that calibration runs
         self._identity_generation = 0
         self._identity_last_seq = -1
         self._identity_frame_seq = -1
@@ -776,7 +812,10 @@ class Runtime:
         self._snapshot = self._build_snapshot(f, s, act, out, progress)
 
     def _configure_identity(self):
-        self._identity_required = (self.player not in profiles.SHARED_PLAYERS
+        # While a full calibration relearns this profile's face, the old references must not gate it: if they no
+        # longer match (an old enrollment, new lighting), the calibration would wait forever for "the enrolled
+        # person" and never learn the new face.
+        self._identity_required = (self.player not in profiles.SHARED_PLAYERS and not self._face_id_relearning
                                    and identity_required(self.player))
         self._identity_allowed = not self._identity_required
         self._identity_status = unprotected_status(self.player)
@@ -789,6 +828,8 @@ class Runtime:
         if self._identity_required:
             self._identity_status.update(protected=True, allowed=False, state='loading',
                                          face_landmarker_num_faces=4, reason='Loading face enrollment')
+        if self._face_id_relearning:
+            self._identity_status.update(state='relearning', reason='Learning your face in this calibration')
         if self._source is not None:
             self._identity_status['face_landmarker_num_faces'] = None
 
@@ -833,6 +874,19 @@ class Runtime:
 
     def reload_identity(self):
         self._request('identity_reload')
+
+    def forget_face(self) -> None:
+        """Turn Face ID off for the current profile (the Profile page's escape hatch)."""
+        player = self.player
+        if player in profiles.SHARED_PLAYERS:
+            return
+
+        def run() -> None:
+            had = forget_face(player)
+            self._request('identity_reload')
+            self._event("face_id_forgotten", {"player": player, "had": had})
+
+        self._worker(run)
 
     def _do_identity_reload(self):
         if self._multiplayer.enabled:
@@ -911,6 +965,9 @@ class Runtime:
         # Face ID learns the player's face during this calibration's head-movement steps (named profiles only).
         if mode == "full" and self._face_id_possible():
             self._face_id = FaceEnrollment(self._camera, self.player).start()
+            self._face_id_relearning = True
+            self._configure_identity()
+            self._reset_identity_controls()
 
     def _face_id_possible(self) -> bool:
         from helm import identity
@@ -921,15 +978,19 @@ class Runtime:
         if self._face_id is not None:
             self._face_id.cancel()
             self._face_id = None
+        if self._face_id_relearning:               # back to the profile's saved Face ID
+            self._face_id_relearning = False
+            self._configure_identity()
+            self._reset_identity_controls()
 
     def _face_id_ended(self) -> None:
         """Pipeline, after the calibration: once Face ID has saved (or given up), protect the profile."""
         enrollment, self._face_id = self._face_id, None
+        self._face_id_relearning = False
         self._event("face_id_done", {"saved": enrollment.saved, "reason": enrollment.reason,
-                                     "samples": enrollment.samples})
-        if enrollment.saved:
-            self._configure_identity()             # from here on only this face controls the profile
-            self._reset_identity_controls()
+                                     "samples": enrollment.samples, "released": enrollment.released})
+        self._configure_identity()                 # from here on only this face controls the profile
+        self._reset_identity_controls()
 
     def _do_record(self, name: str | None) -> None:
         if self._multiplayer.enabled:

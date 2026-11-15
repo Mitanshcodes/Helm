@@ -93,6 +93,7 @@ export interface EventMsg {
     | "breath_calibration_done"
     | "face_id_done"
     | "captain_step"
+    | "face_id_forgotten"
     | "gesture_trained"
     | "coach_result"
     | "profile_loaded"
@@ -128,6 +129,7 @@ export type Command =
   | { cmd: "set_play_mode"; mode: "singleplayer" | "multiplayer" }
   | { cmd: "assign_controller"; slot: number; player: string | null }
   | { cmd: "reload_identity" }
+  | { cmd: "forget_face" }
   | { cmd: "set_dev_mode"; on: boolean }
   | { cmd: "set_dev_recording"; on: boolean }
   | { cmd: "calibrate"; mode: CalibrationMode | "breath" }

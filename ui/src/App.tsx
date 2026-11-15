@@ -85,8 +85,14 @@ export default function App() {
       return;
     }
     if (teachRef.current?.onEvent(msg, playerRef.current)) return;
+    if (msg.name === "face_id_forgotten") {
+      setToast(data.had ? "Face ID is off for this profile: anyone can control it. Recalibrate to learn your face again." : "This profile had no Face ID.");
+      return;
+    }
     if (msg.name === "face_id_done") {
       if (!data.saved && data.reason && data.reason !== "cancelled") setToast(String(data.reason));
+      const released = Array.isArray(data.released) ? data.released.map(String) : [];
+      if (data.saved && released.length) setToast(`Your face was also locked to ${released.join(", ")}; Face ID is now only on this profile.`);
       setFaceId({ saved: Boolean(data.saved), reason: String(data.reason ?? "") });
       return;
     }

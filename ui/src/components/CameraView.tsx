@@ -36,6 +36,26 @@ function drawMesh(ctx: CanvasRenderingContext2D, points: [number, number][], col
   OPEN_CONTOURS.forEach((ids) => trace(ids, false));
 }
 
+/** Why a Face ID-locked profile is not letting this face in, in words a player understands. */
+function lockedWhy(identity: HelmState["identity"]): string {
+  switch (identity?.state) {
+    case "loading":
+      return "loading Face ID…";
+    case "confirming":
+      return "checking it's you…";
+    case "ambiguous":
+      return "this face matches another profile too · recalibrate";
+    case "stale":
+      return "Face ID is running slow · hold still";
+    case "error":
+      return "Face ID could not start · see Profile";
+    case "rejected":
+      return identity?.score != null ? `not recognized (${Math.round(identity.score * 100)}%) · recalibrate` : "not recognized";
+    default:
+      return "waiting for the enrolled person";
+  }
+}
+
 export type CameraSize = "compact" | "hero" | "stage"; // overlay window, dashboard centrepiece, focus view
 
 export function CameraView({ frame, state, compact, size, hint, profileTones }: { frame: FrameMsg | null; state: HelmState; compact?: boolean; size?: CameraSize; hint?: string | null; profileTones?: Record<string, string> }) {
@@ -110,7 +130,7 @@ export function CameraView({ frame, state, compact, size, hint, profileTones }: 
           aria-label={!frame ? "No camera picture yet" : found ? multiplayer ? "Camera preview with faces outlined and profile labels" : "Camera preview with your face outlined" : "Camera preview, no face found"}
         />
         {!frame && <p className="camera-msg">no camera picture yet</p>}
-        {frame && !found && <p className="camera-msg">{identityLocked ? "waiting for the enrolled person" : "move into view"}</p>}
+        {frame && !found && <p className="camera-msg">{identityLocked ? lockedWhy(state.identity) : "move into view"}</p>}
         {!multiplayer && frame && state.face && state.paused && !state.progress && <p className="camera-msg">paused · close your eyes {(state.mapping?.pause?.hold_ms ?? 2000) / 1000} s to resume</p>}
         {hint && <p className="camera-hint">{hint}</p>}
       </div>

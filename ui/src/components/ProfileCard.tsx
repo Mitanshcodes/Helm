@@ -33,6 +33,11 @@ export function ProfileCard(props: { state: HelmState; send: Send; onSwitch: () 
           Save this profile
         </button>
         {!shared && <button className="btn" disabled={busy} onClick={() => send({ cmd: "reload_identity" })}>Reload face enrollment</button>}
+        {!shared && state.identity?.protected && (
+          <button className="btn" disabled={busy} onClick={() => send({ cmd: "forget_face" })} title="Anyone can then control this profile; recalibrate to learn your face again">
+            Turn off Face ID
+          </button>
+        )}
         {state.breath_connected && (
           <button className="btn" disabled={busy} onClick={() => send({ cmd: "calibrate", mode: "breath" })} title="Measures how hard you can sip and puff">
             Measure my breath

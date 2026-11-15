@@ -98,6 +98,8 @@ def handle_command(runtime: "Runtime", text: str) -> dict | None:
             getattr(runtime, cmd)(msg['on'])
         elif cmd == "reload_identity":
             runtime.reload_identity()
+        elif cmd == "forget_face":
+            runtime.forget_face()
         elif cmd == "calibrate":
             if msg.get("mode") not in ("full", "quick", "breath"):
                 return _error('calibrate needs "mode": "full", "quick" or "breath"', cmd=cmd)

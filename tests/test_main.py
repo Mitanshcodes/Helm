@@ -376,7 +376,7 @@ def test_face_id_learns_during_head_movement_steps_and_protects_the_profile(monk
         time.sleep(0.01)
     rt._face_id_ended()
     assert [e["data"] for e in rt.pop_events() if e["name"] == "face_id_done"] == [
-        {"saved": True, "reason": "", "samples": total}]
+        {"saved": True, "reason": "", "samples": total, "released": []}]
     assert identity.identity_required("sam") and rt._identity_required and rt._face_id is None
 
 
@@ -384,3 +384,50 @@ def test_shared_profiles_and_no_camera_skip_face_id():
     rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))   # guest, mock: no camera
     rt._do_calibrate("full")
     assert rt._face_id is None and rt._calibrator is not None
+
+
+def _same_face(seed: int, n: int = 10):
+    import helm.identity as identity
+    rng = np.random.default_rng(seed)
+    base = rng.normal(size=128)
+    return [identity.unit(base + rng.normal(scale=0.05, size=128)) for _ in range(n)]
+
+
+def test_one_face_in_two_profiles_keeps_only_the_newest_lock(monkeypatch, tmp_path):
+    """The gate needs a margin over every other enrolled profile: the same face in two profiles was "ambiguous"
+    for both, forever. Learning it again moves the lock; a different person's profile is left alone."""
+    import helm.identity as identity
+    import helm.main as main_mod
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    identity.save_template("alice", _same_face(1))
+    identity.save_template("carol", _same_face(2))                      # someone else
+    me_again = _same_face(1)
+    identity.save_template("alice2", me_again)
+    assert main_mod.release_duplicate_faces("alice2", me_again) == ["alice"]
+    assert not identity.identity_required("alice") and identity.identity_required("carol")
+    assert (tmp_path / "alice" / "identity.json.off").exists()           # moved aside, not destroyed
+
+
+def test_full_recalibration_relearns_the_face_unlocked(monkeypatch, tmp_path):
+    """Old references that no longer match must not block the calibration that replaces them."""
+    import helm.identity as identity
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    identity.save_template("sam", _same_face(3))
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server", "--player", "sam"]))
+    assert rt._identity_required                                         # locked to the saved face
+    monkeypatch.setattr(rt, "_face_id_possible", lambda: True)
+    rt._camera = object()                                                # FaceEnrollment is not started for real:
+    import helm.main as main_mod_face
+
+    class NoEnrollment:                                                  # nothing samples the camera in this test
+        step = None
+        def __init__(self, camera, player): pass
+        def start(self): return self
+        def cancel(self): pass
+
+    monkeypatch.setattr(main_mod_face, "FaceEnrollment", NoEnrollment)
+    rt._do_calibrate("full")
+    assert not rt._identity_required and rt._identity_status["state"] == "relearning"
+    rt._do_calibrate("quick")                                            # cancelled: the saved lock comes back
+    assert rt._identity_required
+    assert main_mod_face.forget_face("sam") and not identity.identity_required("sam")
