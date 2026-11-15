@@ -25,7 +25,8 @@ import { MappingView } from "./components/MappingView";
 import { MessageBox } from "./components/MessageBox";
 import { ControllerCard, MovesPanel } from "./components/MovesPanel";
 import { OptionsBar, useOptions } from "./components/OptionsBar";
-import { ProfilePicker } from "./components/ProfilePicker";
+import { ProfilePicker, type SailInfo } from "./components/ProfilePicker";
+import { Departure } from "./components/Departure";
 import { Anchor, AnchorPanel, type AnchorPage, type TabId } from "./components/SetupTabs";
 import { TopBar } from "./components/StatusBar";
 import { SteeringCard } from "./components/SteeringCard";
@@ -177,8 +178,15 @@ export default function App() {
     if (connection === "open") refreshProfiles();
   }, [connection, refreshProfiles]);
 
+  // Sailing from the dock into the dashboard: the dashboard renders underneath while the Departure layer plays.
+  const [departure, setDeparture] = useState<(SailInfo & { player: string }) | null>(null);
+  const [announce, setAnnounce] = useState("");
+  const fadeIn = useRef(false); // reduced motion: a 200 ms crossfade instead of the pan
+
   const pick = useCallback(
-    (player: string) => {
+    (player: string, sail?: SailInfo) => {
+      if (sail) setDeparture({ ...sail, player });
+      else fadeIn.current = true;
       teach.close();
       setPanel(null);
       autoSent.current = false;
@@ -192,6 +200,24 @@ export default function App() {
     },
     [send, state?.profile.game, teach],
   );
+
+  const finishDeparture = useCallback(() => {
+    setDeparture((d) => {
+      if (d) setAnnounce(`${d.label} is at the helm.`);
+      return null;
+    });
+    const heading = main.current?.querySelector<HTMLElement>("h1, h2");
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "dash" || !fadeIn.current) return;
+    fadeIn.current = false;
+    main.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease-out" });
+  }, [screen]);
 
   const closePanel = useCallback(() => setPanel(null), []); // stable: the open page focuses Close once
   const switchRef = useRef<() => void>(() => {});
@@ -318,7 +344,7 @@ export default function App() {
       {toast}
     </button>
   );
-  const intro = screen === "intro" && <Intro camera={frame !== null} face={state?.face ?? false} engine={connection === "open"} onDone={endIntro} />;
+  const intro = screen === "intro" && <Intro camera={frame !== null} face={state?.face ?? false} engine={connection === "open"} breath={state?.breath_connected ?? false} onDone={endIntro} />;
 
   if (!state || !picked.current) {
     return (
@@ -395,9 +421,10 @@ export default function App() {
       <main
         ref={main}
         className={`screen${offline ? " dimmed" : ""}${front ? " behind" : ""}${entrance ? (entrance % 2 ? " enter-a" : " enter-b") : ""}`}
-        aria-hidden={offline || front || screen === "intro" || undefined}
+        aria-hidden={offline || front || screen === "intro" || departure !== null || undefined}
       >
         <TopBar
+          state={state}
           busy={busy}
           onRecalibrate={() => {
             setPanel(null);
@@ -437,6 +464,17 @@ export default function App() {
           />
         </div>
       </main>
+      {departure && (
+        <Departure
+          sail={departure}
+          mainRef={main}
+          onDone={finishDeparture}
+          picker={<ProfilePicker profiles={profiles} ready onPick={() => undefined} state={state} frame={frame} send={send} departing={departure.player} />}
+        />
+      )}
+      <p className="sr-only" aria-live="polite">
+        {announce}
+      </p>
       {focus && (
         <div className="layer stage-layer">
           <div className="stage">

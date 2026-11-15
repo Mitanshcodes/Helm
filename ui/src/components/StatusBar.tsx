@@ -24,11 +24,39 @@ export function Brand() {
   );
 }
 
-export function TopBar({ busy, onRecalibrate }: { busy: boolean; onRecalibrate: () => void }) {
+/** Sip-and-puff check: is the tube plugged in, and a live meter to sip and puff against when it is. */
+export function BreathCheck({ state }: { state: HelmState }) {
+  const on = state.breath_connected;
+  const v = Math.max(-1, Math.min(1, state.breath ?? 0));
+  const a = Math.abs(v);
+  const marks = state.breath_marks ?? { soft: 0.25, hard: 0.65 };
+  const words = !on ? "not plugged in" : a < marks.soft / 2 ? "resting" : `${v > 0 ? "puff" : "sip"} ${Math.round(a * 100)}%${a >= marks.hard ? " · hard" : a >= marks.soft ? " · soft" : ""}`;
+  return (
+    <div className={on ? "breath-check on" : "breath-check"} role="status" aria-label={`Sip-and-puff ${on ? "connected" : "not plugged in"}${on ? `, ${words}` : ""}`}>
+      <span className="breath-check-label">
+        <b>sip-and-puff</b> {on ? "✓" : "✗"}
+      </span>
+      {on ? (
+        <span className="breath-check-meter" aria-hidden="true">
+          <span className="end">sip</span>
+          <span className="track">
+            <span className="fill" style={v < 0 ? { left: `${50 + v * 50}%`, width: `${a * 50}%` } : { left: "50%", width: `${a * 50}%` }} />
+            <i className="mid" />
+          </span>
+          <span className="end">puff</span>
+        </span>
+      ) : null}
+      <span className="breath-check-words">{words}</span>
+    </div>
+  );
+}
+
+export function TopBar({ state, busy, onRecalibrate }: { state: HelmState; busy: boolean; onRecalibrate: () => void }) {
   return (
     <header className="topbar">
       <h1 className="sr-only">Helm</h1>
       <Brand />
+      <BreathCheck state={state} />
       <button className="btn primary" onClick={onRecalibrate} disabled={busy} title="Measure your resting face, head range and expressions again">
         Recalibrate
       </button>

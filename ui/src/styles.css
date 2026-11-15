@@ -2755,6 +2755,85 @@ input[type="range"] {
   }
 }
 
+/* The dolphin: leaps out of the water in an arc and dives back in, with a splash at each end. */
+.dolphin-leap {
+  position: absolute;
+  width: 160px;
+  height: 70px;
+  pointer-events: none;
+}
+
+.dolphin-leap.flip {
+  transform: scaleX(-1);
+}
+
+.dolphin-arc {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 80px;
+  animation: dolphin-arc 1.8s cubic-bezier(0.3, 0, 0.7, 1) both;
+}
+
+.dolphin {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@keyframes dolphin-arc {
+  0% {
+    opacity: 0;
+    transform: translate(0, 20px) rotate(-40deg);
+  }
+  10% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(48px, -46px) rotate(0deg);
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(96px, 22px) rotate(40deg);
+  }
+}
+
+.splash {
+  position: absolute;
+  bottom: -6px;
+  width: 50px;
+  height: auto;
+  opacity: 0;
+}
+
+.splash-in {
+  left: 6px;
+  animation: splash 0.7s steps(4) both;
+}
+
+.splash-out {
+  left: 100px;
+  animation: splash 0.7s steps(4) 1.45s both;
+}
+
+@keyframes splash {
+  0% {
+    opacity: 0;
+    transform: scale(0.4, 0.2);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.3, 0.6);
+  }
+}
+
 /* Swells: long, low wave lines drifting slowly. */
 .swell {
   position: absolute;
@@ -2926,6 +3005,70 @@ input[type="range"] {
   font-size: 17px;
 }
 
+/* ---------------------------------------------------------------- sip-and-puff check (top bar) */
+
+.breath-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  margin-right: 18px;
+  padding: 6px 14px;
+  border: 3px dashed var(--ink);
+  font-size: 17px;
+  transform: rotate(-1deg);
+}
+
+.breath-check.on {
+  border-style: solid;
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--blue);
+}
+
+.breath-check-label b {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 19px;
+}
+
+.breath-check-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.breath-check-meter .track {
+  position: relative;
+  width: 150px;
+  height: 18px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+}
+
+.breath-check-meter .fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: radial-gradient(circle, var(--pink) 1.7px, transparent 2px) 0 0 / 6px 6px;
+}
+
+.breath-check-meter .mid {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  left: 50%;
+  width: 3px;
+  margin-left: -1.5px;
+  background: var(--ink);
+}
+
+.breath-check-words {
+  min-width: 110px;
+  font-weight: 700;
+}
+
 /* ---------------------------------------------------------------- delete and reset */
 
 .danger-zone {
@@ -2962,3 +3105,367 @@ input[type="range"] {
   background: #ffffff;
   box-shadow: none;
 }
+
+/* ================================================================ the dock (profile page) */
+
+.picker {
+  position: relative;
+  overflow: hidden;
+}
+
+.picker.departing {
+  animation: none;
+}
+
+.dock-lede {
+  margin-top: -18px;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+/* Full-width strip: boardwalk across the page, the harbour's (still) sea under it, columns on top. */
+.dock {
+  position: relative;
+  align-self: stretch;
+  margin: 0 -34px;
+  padding-bottom: 10px;
+}
+
+.boardwalk {
+  position: absolute;
+  z-index: 1;
+  top: 180px;
+  left: 0;
+  right: 0;
+  height: 74px;
+  background: repeating-linear-gradient(90deg, #c98f55 0 36px, #a87240 36px 39px);
+  border-top: 4px solid var(--ink);
+  border-bottom: 4px solid var(--ink);
+}
+
+.dock-sea {
+  position: absolute;
+  z-index: 0;
+  top: 254px;
+  left: 0;
+  right: 0;
+  height: calc(100vh / (var(--zoom) * var(--fit)));
+  overflow: hidden;
+}
+
+/* More water here than on the dashboard: a deeper halftone that runs right to the edges, a pale wash, and the
+   waves drift slowly. */
+.dock-sea {
+  background: linear-gradient(180deg, rgba(151, 203, 230, 0.35), rgba(151, 203, 230, 0.12) 70%, transparent);
+}
+
+.dock-sea .sea {
+  background: radial-gradient(circle, #84c0e0 2px, transparent 2.3px) 0 0 / 10px 10px;
+  opacity: 0.9;
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
+  mask-image: linear-gradient(180deg, #000 70%, transparent);
+}
+
+.dock-sea .ripple {
+  fill: #5eaad6;
+  opacity: 0.75;
+}
+
+.dock-sea .swell {
+  width: 300px;
+  fill: #6fb5dc;
+  opacity: 0.8;
+}
+
+:root[data-contrast="high"] .dock-sea {
+  background: none;
+}
+
+.dock-cols {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+}
+
+.dock-col {
+  width: 220px;
+}
+
+.dock-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.dock-btn:disabled {
+  cursor: default;
+}
+
+.picker:not(.casting) .dock-btn:disabled {
+  opacity: 0.6;
+}
+
+.dock-btn:focus-visible {
+  outline: none;
+}
+
+.dock-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  height: 180px;
+  padding-top: 14px;
+}
+
+.dock-col .avatar {
+  width: 150px;
+  height: 150px;
+  transform: rotate(var(--tilt, 0deg));
+}
+
+/* Hover or focus: the card straightens and lifts 6px. */
+.dock-btn:hover:not(:disabled) .avatar,
+.dock-btn:focus-visible .avatar {
+  transform: translateY(-6px) rotate(0deg);
+  box-shadow: 14px 14px 0 var(--blue);
+}
+
+.dock-btn:focus-visible .avatar {
+  outline: 5px solid var(--focus);
+  outline-offset: 5px;
+}
+
+.dock-col .avatar.add {
+  font-size: 90px;
+}
+
+/* The name sits on the boardwalk as a paper tag (74px band, tag centred in it). */
+.dock-tag {
+  height: 40px;
+  max-width: 300px; /* may overhang its slip: long names stay readable */
+  margin: 17px 0;
+  padding: 0 12px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  font-family: var(--display);
+  font-size: 23px;
+  font-weight: 800;
+  line-height: 34px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+  z-index: 2;
+}
+
+/* The slip: a finger pier each side (shared with the neighbour), ropes to the stern, the ship moored bow down. */
+.dock-slip {
+  position: relative;
+  display: block;
+  width: 220px;
+  height: 250px;
+}
+
+.pier {
+  position: absolute;
+  top: 0;
+  width: 18px;
+  height: 250px;
+  background: repeating-linear-gradient(180deg, #c98f55 0 30px, #a87240 30px 33px);
+  border-left: 3px solid var(--ink);
+  border-right: 3px solid var(--ink);
+  border-bottom: 3px solid var(--ink);
+}
+
+.pier.left {
+  left: -9px;
+}
+
+.pier.right {
+  right: -9px;
+}
+
+.pier::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: calc(50% - 8px);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #3b2412;
+  border: 2px solid var(--ink);
+}
+
+.ropes {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 220px;
+  height: 60px;
+  overflow: visible;
+}
+
+.ropes path {
+  fill: none;
+  stroke: #5e3b1a;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.moored {
+  position: absolute;
+  top: 44px;
+  left: calc(50% - 42px);
+  width: 84px; /* the harbour ship at 1.6x, turned bow down */
+  height: 176px;
+  animation: moored-bob 2.6s ease-in-out infinite alternate;
+}
+
+.moored img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 176px;
+  height: 84px;
+  transform: translate(-50%, -50%) rotate(90deg);
+  image-rendering: pixelated;
+}
+
+.moored.empty {
+  border: 3px dashed var(--ink);
+  border-radius: 50% 50% 48% 48% / 22% 22% 78% 78%;
+  animation: none;
+}
+
+@keyframes moored-bob {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(3px);
+  }
+}
+
+.dock-note {
+  margin-top: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  position: relative;
+  z-index: 2;
+}
+
+/* The new-profile form takes the card's place, same height so the tag stays on the boards. */
+.dock-btn.as-form {
+  cursor: default;
+}
+
+.dock-card.new-form {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 210px;
+  height: 180px;
+  padding: 10px;
+  border: 4px dashed var(--ink);
+  background: var(--paper);
+}
+
+.dock-card.new-form input {
+  font-size: 20px;
+  padding: 4px 8px;
+}
+
+.dock-card.new-form .tile-note {
+  font-size: 12px;
+}
+
+/* Casting off: ropes and subtitle fade, the ship wiggles in place. */
+.dock-col .ropes,
+.dock-col .dock-note {
+  transition: opacity 0.3s ease;
+}
+
+.dock-col.leaving .ropes,
+.dock-col.leaving .dock-note,
+.dock-col.gone .ropes,
+.dock-col.gone .dock-note {
+  opacity: 0;
+}
+
+.dock-col.leaving .moored {
+  animation: cast-off 0.45s ease-in-out both;
+}
+
+/* Sailing out: bob stops (the pan's animation moves it), foam and wake on. */
+.dock-col.gone .moored {
+  animation: none;
+}
+
+.moored-foam {
+  display: none;
+}
+
+.dock-col.gone .moored-foam.a {
+  display: block;
+  animation: foam 0.8s steps(1) infinite;
+}
+
+.dock-col.gone .moored-foam.b {
+  display: block;
+  animation: foam 0.8s steps(1) infinite reverse;
+}
+
+/* The sailing ship passes over the Anchor note and the rest of the dock. */
+.picker-foot {
+  position: relative;
+  z-index: 1;
+}
+
+.dock-cols {
+  z-index: 3;
+}
+
+@keyframes cast-off {
+  0% {
+    transform: rotate(0deg);
+  }
+  33% {
+    transform: rotate(-4deg);
+  }
+  66% {
+    transform: rotate(4deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+:root[data-contrast="high"] .dock-sea .sea {
+  display: none;
+}
+
+/* ================================================================ casting off: dock -> dashboard */
+
+.sail-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+}
+
+.sail-dock {
+  position: absolute;
+  inset: 0 0 auto 0;
+  min-height: 100vh;
+  background: var(--paper);
+}
+
+

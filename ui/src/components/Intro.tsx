@@ -30,7 +30,7 @@ function Wheel({ className }: { className: string }) {
   );
 }
 
-export function Intro({ camera, face, engine, onDone }: { camera: boolean; face: boolean; engine: boolean; onDone: () => void }) {
+export function Intro({ camera, face, engine, breath, onDone }: { camera: boolean; face: boolean; engine: boolean; breath: boolean; onDone: () => void }) {
   const [fading, setFading] = useState(false);
   const finish = useRef(onDone);
   finish.current = onDone;
@@ -62,7 +62,12 @@ export function Intro({ camera, face, engine, onDone }: { camera: boolean; face:
     };
   }, [calm]);
 
-  const lines = [camera ? "printing… camera ✓" : "printing… camera… waiting", face ? "face ✓" : "face… looking", engine ? "controller ✓" : "controller… starting"];
+  const lines = [
+    camera ? "printing… camera ✓" : "printing… camera… waiting",
+    face ? "face ✓" : "face… looking",
+    engine ? "controller ✓" : "controller… starting",
+    breath ? "sip-and-puff ✓" : "sip-and-puff… not plugged in",
+  ];
   return (
     <div className={`intro${fading ? " fading" : ""}${calm ? " calm" : ""}`} role="status" aria-live="polite" aria-label="Helm is starting">
       <div className="intro-wheels" aria-hidden="true">
