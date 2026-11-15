@@ -464,3 +464,9 @@ def test_named_players_still_persist(profile_root):
 def test_shared_identities_keep_their_committed_mapping():
     """Only calibration is throwaway: the judge profile's mapping must still load."""
     assert profiles.load_mapping("judge", "SuperTuxKart")["auto"] == {"rt": 1.0}
+
+
+def test_a_calibrated_profile_without_a_mapping_is_listed(profile_root):
+    """A profile made in the dashboard has a calibration before anyone presses Save: it must still be pickable."""
+    profiles.save_calibration(calibrated_player())
+    assert profiles.list_profiles() == {"sam": []}

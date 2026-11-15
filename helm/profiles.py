@@ -265,7 +265,9 @@ def gesture_model_path(player: str) -> str:
 
 
 def list_profiles() -> dict[str, list[str]]:
-    """player -> the games that player has a mapping for. `_defaults` is not a player."""
+    """player -> the games that player has a mapping for. `_defaults` is not a player. A player with only a
+    calibration, learned moves, breath range or Face ID (no mapping saved yet) is listed with no games, so a profile
+    made in the dashboard shows up in the profile screen straight after its first calibration."""
     found: dict[str, list[str]] = {}
     if not _ROOT.is_dir():
         return found
@@ -275,6 +277,7 @@ def list_profiles() -> dict[str, list[str]]:
         games = sorted(f.stem for f in folder.glob("*.json")
                        if f.stem.casefold() not in _METADATA_STEMS)
         has_identity = any((folder / name).exists() for name in ('identity.json', 'identity_required.json'))
-        if games or has_identity:
+        has_setup = any((folder / name).exists() for name in ('calibration.json', 'gestures.npz', 'breath.json'))
+        if games or has_identity or has_setup:
             found[folder.name] = games
     return found

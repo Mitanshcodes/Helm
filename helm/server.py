@@ -100,6 +100,10 @@ def handle_command(runtime: "Runtime", text: str) -> dict | None:
             runtime.reload_identity()
         elif cmd == "forget_face":
             runtime.forget_face()
+        elif cmd == "delete_profile":
+            runtime.delete_profile()
+        elif cmd == "reset_profiles":
+            runtime.reset_profiles()
         elif cmd == "calibrate":
             if msg.get("mode") not in ("full", "quick", "breath"):
                 return _error('calibrate needs "mode": "full", "quick" or "breath"', cmd=cmd)

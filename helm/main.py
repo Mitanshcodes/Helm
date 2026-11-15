@@ -63,6 +63,46 @@ def hold_back_crosstalk(act: dict[str, float], competitors: dict[str, tuple[floa
     return out
 
 
+# Profiles that ship in the repo (committed files): never deleted from the dashboard.
+BUILT_IN_PROFILES = frozenset({"_defaults", "demo", "demo_webcam", "guest", "judge"})
+_IDENTITY_FILES = ("identity.json", "identity_required.json", "identity.json.off")
+
+
+def delete_profile_files(player: str) -> bool:
+    """Delete a profile someone made here (its folder: calibration, mappings, moves, breath, Face ID). Built-in
+    profiles are refused. True if there was a folder."""
+    import re
+    if player in BUILT_IN_PROFILES or player.startswith("_") or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", player):
+        raise ValueError(f"{player!r} is a built-in profile and cannot be deleted")
+    root = profiles._ROOT.resolve()
+    folder = (root / player).resolve()
+    if folder.parent != root:
+        raise ValueError("not a profile folder")
+    if not folder.is_dir():
+        return False
+    shutil.rmtree(folder)
+    return True
+
+
+def reset_profiles() -> list[str]:
+    """Reset state: delete every profile someone made here, and every saved Face ID (also on built-in profiles).
+    Built-in profiles and the default mappings stay. Returns the deleted profiles."""
+    root = profiles._ROOT
+    deleted = []
+    if not root.is_dir():
+        return deleted
+    for folder in sorted(root.iterdir()):
+        if not folder.is_dir():
+            continue
+        if folder.name in BUILT_IN_PROFILES or folder.name.startswith("_"):
+            for name in _IDENTITY_FILES:
+                (folder / name).unlink(missing_ok=True)
+        else:
+            shutil.rmtree(folder)
+            deleted.append(folder.name)
+    return deleted
+
+
 def forget_face(player: str) -> bool:
     """Turn Face ID off for a profile: its references and the "required" marker are moved aside (kept as
     identity.json.off for recovery, never shared: profiles/**/identity* is git-ignored). True if it had Face ID."""
@@ -874,6 +914,39 @@ class Runtime:
 
     def reload_identity(self):
         self._request('identity_reload')
+
+    def delete_profile(self) -> None:
+        """Delete the current profile (not a built-in one) and switch to Default."""
+        player, game = self.player, self.game
+        if player in BUILT_IN_PROFILES or player.startswith("_"):
+            self._event("error", {"message": "Built-in profiles cannot be deleted"})
+            return
+        self.load_profile(profiles.GUEST_PLAYER, game)    # stop using it first, so nothing writes into it again
+
+        def run() -> None:
+            self._wait_for_player(profiles.GUEST_PLAYER)
+            delete_profile_files(player)
+            self._event("profile_deleted", {"player": player})
+
+        self._worker(run)
+
+    def reset_profiles(self) -> None:
+        """Dev: delete every profile made here and every Face ID, then switch to Default."""
+        game = self.game
+        self.load_profile(profiles.GUEST_PLAYER, game)
+
+        def run() -> None:
+            self._wait_for_player(profiles.GUEST_PLAYER)
+            deleted = reset_profiles()
+            self._event("profiles_reset", {"deleted": deleted})
+
+        self._worker(run)
+
+    def _wait_for_player(self, player: str, timeout_s: float = 3.0) -> None:
+        """Worker: wait until the pipeline has switched to `player` (a profile load lands on the next frame)."""
+        deadline = time.monotonic() + timeout_s
+        while self.player != player and time.monotonic() < deadline:
+            time.sleep(0.02)
 
     def forget_face(self) -> None:
         """Turn Face ID off for the current profile (the Profile page's escape hatch)."""

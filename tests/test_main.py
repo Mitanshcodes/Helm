@@ -431,3 +431,37 @@ def test_full_recalibration_relearns_the_face_unlocked(monkeypatch, tmp_path):
     rt._do_calibrate("quick")                                            # cancelled: the saved lock comes back
     assert rt._identity_required
     assert main_mod_face.forget_face("sam") and not identity.identity_required("sam")
+
+
+def test_delete_profile_and_reset_keep_the_built_in_ones(monkeypatch, tmp_path):
+    import helm.identity as identity
+    import helm.main as main_mod
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    for name in ("sam", "alex", "guest", "demo", "_defaults"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "SuperTuxKart.json").write_text("{}")
+    identity.save_template("sam", _same_face(4))
+    (tmp_path / "guest" / "identity.json.off").write_text("{}")
+    assert main_mod.delete_profile_files("sam") and not (tmp_path / "sam").exists()
+    for built_in in ("guest", "demo", "_defaults", "../x"):
+        with pytest.raises(ValueError):
+            main_mod.delete_profile_files(built_in)
+    assert main_mod.reset_profiles() == ["alex"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["_defaults", "demo", "guest"]
+    assert not (tmp_path / "guest" / "identity.json.off").exists() and (tmp_path / "guest" / "SuperTuxKart.json").exists()
+
+
+def test_deleting_the_current_profile_switches_to_default(monkeypatch, tmp_path):
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    (tmp_path / "sam").mkdir()
+    (tmp_path / "sam" / "SuperTuxKart.json").write_text(json.dumps(default_mapping("SuperTuxKart")))
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server", "--player", "sam"]))
+    seen: list[str] = []
+
+    def done() -> bool:
+        seen.extend(e["name"] for e in rt.pop_events())
+        return "profile_deleted" in seen
+
+    rt.delete_profile()
+    _run(rt, done, timeout=4.0)
+    assert rt.player == "guest" and "profile_deleted" in seen and not (tmp_path / "sam").exists()

@@ -2925,3 +2925,40 @@ input[type="range"] {
 .captain-changes li span {
   font-size: 17px;
 }
+
+/* ---------------------------------------------------------------- delete and reset */
+
+.danger-zone {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 3px dashed var(--ink);
+}
+
+.btn.danger {
+  border-color: #b3261e;
+  color: #b3261e;
+  box-shadow: 5px 5px 0 #b3261e;
+}
+
+.btn.danger-solid {
+  background: #b3261e;
+  border-color: #b3261e;
+  color: #ffffff;
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+}
+
+:root[data-contrast="high"] .btn.danger,
+:root[data-contrast="high"] .btn.danger-solid {
+  border-color: #000000;
+  color: #000000;
+  background: #ffffff;
+  box-shadow: none;
+}

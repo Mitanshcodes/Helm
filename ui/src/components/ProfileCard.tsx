@@ -1,11 +1,43 @@
 // OWNER: P4
 // The Anchor's Profile page: who is playing which game, switching profile (back to the profile screen), saving,
-// and measuring breath when a sip-and-puff sensor is attached.
+// measuring breath when a sip-and-puff sensor is attached, Face ID, and deleting the profile.
+import { useState } from "react";
 import { humanize } from "../format";
 import type { HelmState, Send } from "../types";
 
 export const JUDGE = "judge"; // a shared identity from earlier builds (profiles/judge); never saves a calibration
 export const DEFAULT_PLAYER = "guest"; // the "Default" profile: shared, a fresh setup for each person
+// Profiles that ship in the repo: the engine refuses to delete them (main.BUILT_IN_PROFILES).
+export const BUILT_IN = new Set(["guest", "judge", "demo", "demo_webcam"]);
+
+/** A button that asks once more before doing something that cannot be undone. */
+export function ConfirmButton(props: { label: string; question: string; confirm: string; disabled?: boolean; onConfirm: () => void }) {
+  const { label, question, confirm, disabled, onConfirm } = props;
+  const [asking, setAsking] = useState(false);
+  if (!asking)
+    return (
+      <button className="btn danger" disabled={disabled} onClick={() => setAsking(true)}>
+        {label}
+      </button>
+    );
+  return (
+    <span className="confirm" role="alertdialog" aria-label={question}>
+      <span>{question}</span>
+      <button
+        className="btn danger-solid"
+        onClick={() => {
+          setAsking(false);
+          onConfirm();
+        }}
+      >
+        {confirm}
+      </button>
+      <button className="btn" onClick={() => setAsking(false)} autoFocus>
+        Cancel
+      </button>
+    </span>
+  );
+}
 
 export function ProfileCard(props: { state: HelmState; send: Send; onSwitch: () => void; busy: boolean }) {
   const { state, send, onSwitch, busy } = props;
@@ -44,6 +76,17 @@ export function ProfileCard(props: { state: HelmState; send: Send; onSwitch: () 
           </button>
         )}
       </div>
+      {!BUILT_IN.has(player) && (
+        <div className="line danger-zone">
+          <ConfirmButton
+            label="Delete profile"
+            question={`Delete ${humanize(player)} for good? Its setup, mappings, moves and Face ID go.`}
+            confirm="Yes, delete"
+            disabled={busy}
+            onConfirm={() => send({ cmd: "delete_profile" })}
+          />
+        </div>
+      )}
     </section>
   );
 }

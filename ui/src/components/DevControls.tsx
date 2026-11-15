@@ -1,5 +1,6 @@
 // OWNER: shared (development dataset capture)
 import type { HelmState, Send } from "../types";
+import { ConfirmButton } from "./ProfileCard";
 
 export function DevControls({ state, send }: { state: HelmState; send: Send }) {
   const dev = state.dev;
@@ -18,5 +19,10 @@ export function DevControls({ state, send }: { state: HelmState; send: Send }) {
       {dev.session && <small>{dev.session.path}</small>}
       {dev.session?.error && <strong role="alert">{dev.session.error}</strong>}
     </>}
+    <div className="line danger-zone">
+      <ConfirmButton label="Reset state" disabled={state.progress !== null}
+        question="Delete every profile made on this laptop, and every Face ID? Built-in profiles stay."
+        confirm="Yes, reset" onConfirm={() => send({ cmd: "reset_profiles" })} />
+    </div>
   </section>;
 }

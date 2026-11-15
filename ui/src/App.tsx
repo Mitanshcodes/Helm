@@ -85,6 +85,13 @@ export default function App() {
       return;
     }
     if (teachRef.current?.onEvent(msg, playerRef.current)) return;
+    if (msg.name === "profile_deleted" || msg.name === "profiles_reset") {
+      const deleted = Array.isArray(data.deleted) ? data.deleted.length : 0;
+      setToast(msg.name === "profile_deleted" ? `Deleted ${String(data.player)}. You're on Default now.`
+        : `Reset: deleted ${deleted} profile${deleted === 1 ? "" : "s"} and every Face ID.`);
+      switchRef.current();                         // back to the profile screen, with the list refreshed
+      return;
+    }
     if (msg.name === "face_id_forgotten") {
       setToast(data.had ? "Face ID is off for this profile: anyone can control it. Recalibrate to learn your face again." : "This profile had no Face ID.");
       return;
@@ -187,6 +194,7 @@ export default function App() {
   );
 
   const closePanel = useCallback(() => setPanel(null), []); // stable: the open page focuses Close once
+  const switchRef = useRef<() => void>(() => {});
 
   const switchProfile = useCallback(() => {
     setPanel(null);
@@ -194,6 +202,7 @@ export default function App() {
     refreshProfiles();
     setScreen("pick");
   }, [refreshProfiles, teach]);
+  switchRef.current = switchProfile;
 
   const applyMapping = useCallback(
     (next: Mapping) => {

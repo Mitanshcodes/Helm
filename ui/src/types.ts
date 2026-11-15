@@ -94,6 +94,8 @@ export interface EventMsg {
     | "face_id_done"
     | "captain_step"
     | "face_id_forgotten"
+    | "profile_deleted"
+    | "profiles_reset"
     | "gesture_trained"
     | "coach_result"
     | "profile_loaded"
@@ -130,6 +132,8 @@ export type Command =
   | { cmd: "assign_controller"; slot: number; player: string | null }
   | { cmd: "reload_identity" }
   | { cmd: "forget_face" }
+  | { cmd: "delete_profile" }
+  | { cmd: "reset_profiles" }
   | { cmd: "set_dev_mode"; on: boolean }
   | { cmd: "set_dev_recording"; on: boolean }
   | { cmd: "calibrate"; mode: CalibrationMode | "breath" }
