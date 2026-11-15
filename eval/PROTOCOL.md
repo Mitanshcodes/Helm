@@ -20,7 +20,8 @@ What it measures: from the first visible movement of the eyebrows to the screen 
 system (camera, tracking, the virtual pad, Windows, the browser, the display).
 
 Setup
-1. `python -m helm --player NAME` and map A to eyebrow raise (the default does). Calibrate fully.
+1. `python -m helm`. In the profile screen, pick the participant's profile, or New profile with their name, which
+   runs the full setup. A is eyebrow raise in the default mapping; check it in the Anchor's Mapping page.
 2. Open `eval/latency.html` in Chrome or Edge, press F11. Press any pad button once if it says "No gamepad yet".
 3. Phone in slow motion at 240 fps, on a stand, framing the participant's eyebrows and the square together.
    Turn on room lights; no window behind the participant.
@@ -53,15 +54,26 @@ calibration (any face gesture the mapping uses crossing a raw score of 0.5 fires
 (calibrated scale, hysteresis and hold times, the learned "none" class, the 2 s pause rule).
 
 Run, per participant
-1. `python -m helm --player NAME`. Full calibration. In "Teach a move", do the everyday face (reading aloud)
-   and, if they want, one move of their own and put it on a button. Close Helm (Ctrl+C).
-2. Start the recording: `python -m helm --player NAME --record eval/results/rec_NAME.npz`.
-   Do not recalibrate. Make sure Helm is not paused.
-3. As soon as the camera panel shows the face, start a timer and do, without a break:
-   - minute 1: read aloud (use a text that is not in `ui/src/readingTexts.ts`, so it is new to the model);
+1. Set up the profile:
+   - Run `python -m helm`. In the profile screen pick New profile and type their name (the name is NAME below).
+     The full setup runs: head range, expressions, the nod and Face ID.
+   - Then open the Anchor's Your moves page and choose Teach a move. Keep "Include the everyday face" ticked (they
+     read a short text aloud). Their own move is optional.
+   - Close Helm (Ctrl+C).
+2. Record, without the dashboard, so the recording starts the moment the command runs and stops itself after
+   exactly three minutes:
+
+   ```
+   python -m helm --player NAME --no-server --seconds 180 --record eval/results/rec_NAME.npz
+   ```
+
+   It loads NAME's saved setup. Nothing is recalibrated.
+3. Start a phone timer at the same moment and have a teammate call out the minutes. Without a break:
+   - minute 1: read aloud from paper or another screen (use a text that is not in `ui/src/readingTexts.ts`, so
+     it is new to the model);
    - minute 2: chat with a teammate;
    - minute 3: watch a gameplay video.
-4. Ctrl+C after three minutes. The recording is written on exit.
+4. Helm stops at 3:00 and writes the recording.
 
 Score
 
@@ -79,17 +91,25 @@ What it measures: how fast and accurately someone can point with small head move
 scaling (c) against the same small movements at a fixed gain (d). Throughput in bits per second:
 `TP = IDe / MT`, `IDe = log2(Ae / We + 1)`, `We = 4.133 * SDx` (ISO 9241-9, effective width).
 
-Mapping for this test (Mapping tab, then Apply): Left stick ← → = "Turn head left / right",
+Mapping for this test (Anchor → Mapping, then Apply): Left stick ← → = "Turn head left / right",
 Left stick ↑ ↓ = "Nod chin up / down", A = Eyebrow raise. Nothing else needs to be mapped.
+
+**Steering sensitivity** (the card under the controller) must read **1.0×** in both conditions; press Reset if not.
+Otherwise the comparison is not fair.
 
 The restricted range: ask the participant to move about a third of their normal turn and nod, every time,
 in both conditions. Demonstrate it, and have a teammate watch for drift back to full movement.
 
 Run, per participant (alternate which condition goes first between participants)
-- (c) Helm, scaled: open `http://localhost:8000/`, Recalibrate (full), moving only the small range in the
-  turn and nod steps. Open `eval/target_test.html`, condition "(c) Helm", cursor control "Rate". Start.
-- (d) Fixed gain: open `http://localhost:8000/?quick=1`, Recalibrate (quick: neutral only, so the range stays
-  at the fixed 20 degrees each way). Same page, condition "(d) Fixed gain", same cursor control. Start.
+- (c) Helm, scaled: open `http://localhost:8000/` and pick a profile named `NAME_c`. Its full setup runs; in the
+  turn and nod steps move only the small range. Open `eval/target_test.html`, condition "(c) Helm", cursor control
+  "Rate". Start.
+- (d) Fixed gain: open `http://localhost:8000/?quick=1` and pick a profile named `NAME_d`. It runs the quick setup
+  (resting face only), so the range stays at the fixed 20 degrees each way. Same page, condition
+  "(d) Fixed gain", same cursor control. Start.
+- Use these separate `NAME_c` and `NAME_d` profiles, not NAME itself. Otherwise the restricted-range calibration
+  overwrites NAME's real one, and the false-trigger scoring (which reads NAME's saved setup) would use it. Or score
+  test 2 before running test 3.
 - Optional mouse baseline: condition "Mouse baseline".
 
 Each run is one practice block (not saved), then four blocks: two ring sizes by two target sizes, nine timed
