@@ -128,6 +128,36 @@ def test_gesture_buttons_do_not_cross_profiles_and_loss_requires_a_new_hold():
     assert m.pads[0].last.buttons == frozenset({'A'})
 
 
+def test_players_can_overlap_long_acceleration_holds_and_release_independently():
+    m = manager()
+    mapping = dict(gestures={'smile': dict(kind='blendshape', sources=['mouthSmileLeft'],
+                                          on=.6, off=.3, min_hold_ms=100)},
+                   buttons=[dict(gesture='smile', target='rt', mode='hold'),
+                            dict(gesture='smile', target='A', mode='hold')])
+    for slot, player in enumerate(('alex', 'sam')):
+        m.assign(slot, PlayerSession(player, 'game', None, mapping, None, hold_back_crosstalk))
+    base = time.perf_counter_ns()
+    channel = BLENDSHAPE_NAMES.index('mouthSmileLeft')
+    # P1 starts; P2 joins later and both hold for many seconds. P1 releases,
+    # rejoins, then P2 releases. Reordering detections must not change ownership.
+    for tick in range(600):
+        r = result(seq=tick, capture=base + tick * 20_000_000)
+        alex = tick < 350 or tick >= 400
+        sam = 100 <= tick < 500
+        r.faces[0].blend[channel] = .9 if alex else 0
+        r.faces[1].blend[channel] = .9 if sam else 0
+        if tick % 2:
+            r.faces.reverse()
+            r.matches = {0: 'sam', 1: 'alex'}
+        assert m.process(r, r.capture_ns)
+        if tick in (50, 150, 300, 380, 450, 550):
+            expected = (alex, sam)
+            for slot, accelerating in enumerate(expected):
+                assert m.pads[slot].last.rt == float(accelerating)
+                assert ('A' in m.pads[slot].last.buttons) == accelerating
+                assert m.snapshot()['controllers'][slot]['control']['rt'] == float(accelerating)
+
+
 def test_preview_mirrors_every_face_and_preserves_profile_labels():
     points = np.array([[.2, .3], [.7, .8]], np.float32)
     preview = encode_preview(np.zeros((80, 120, 3), np.uint8), None,
