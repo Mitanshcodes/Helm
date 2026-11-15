@@ -103,7 +103,7 @@ class Calibrator:
         if not f.face:                             # the timer pauses while the face is lost
             return self._progress(prompt=_NO_FACE_PROMPT)
 
-        self._samples.append((t_s, dataclasses.replace(f, landmarks=None)))   # landmarks: preview only
+        self._samples.append((t_s, dataclasses.replace(f, landmarks=None, landmarks3d=None)))   # preview only
         self._elapsed += dt
         name, duration, _, measure = self._steps[self._i]
         if measure[0] == "range":                  # wait for the turn itself, not just the clock

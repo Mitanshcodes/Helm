@@ -79,6 +79,7 @@ export interface EventMsg {
   name:
     | "calibration_done"
     | "breath_calibration_done"
+    | "face_id_done"
     | "gesture_trained"
     | "coach_result"
     | "profile_loaded"

@@ -311,3 +311,52 @@ def test_calibration_nods_train_the_learned_move_and_land_on_x(monkeypatch, tmp_
     while not (tmp_path / "sam" / "SuperTuxKart.json").exists() and time.monotonic() < deadline:
         time.sleep(0.02)
     assert json.loads((tmp_path / "sam" / "SuperTuxKart.json").read_text())["gestures"]["nod_up"]["kind"] == "learned"
+
+
+def test_face_id_runs_first_in_a_named_full_calibration_and_protects_the_profile(monkeypatch, tmp_path):
+    import helm.identity as identity
+    import helm.main as main_mod
+    from types import SimpleNamespace
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path / "profiles")
+    weights = tmp_path / "sface.onnx"
+    weights.write_bytes(b"x")
+    monkeypatch.setattr(identity, "MODEL_PATH", weights)
+    monkeypatch.setattr(config, "FACE_ID_INTERVAL_S", 0.0)
+    me = np.random.default_rng(1).normal(size=128)
+
+    class Camera:
+        seq = 0
+        def wait_latest(self, last, timeout=0.2):
+            Camera.seq += 1
+            return np.zeros((480, 640, 3), np.uint8), Camera.seq * 1_000_000, Camera.seq
+
+    class Encoder:
+        def embed(self, image, face):
+            return identity.unit(me + np.random.default_rng(Camera.seq).normal(scale=0.05, size=128))
+
+    class Tracker:
+        def __init__(self, num_faces=1): pass
+        def process_all(self, image, t, seq): return [SimpleNamespace()]
+        def close(self): pass
+
+    monkeypatch.setattr(identity, "SFace", Encoder)
+    monkeypatch.setattr(main_mod, "FaceTracker", Tracker)
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server", "--player", "sam"]))
+    rt._camera = Camera()                                      # a camera, so Face ID can run
+    rt._do_calibrate("full")
+    assert rt._face_id is not None and rt._calibrator is None
+    first = rt._face_id_step()
+    assert first.step == "face_id"
+    deadline = time.monotonic() + 3.0
+    while not rt._face_id.done and time.monotonic() < deadline:
+        time.sleep(0.01)
+    after = rt._face_id_step()                                 # done: protect the profile, start the calibration
+    assert after.step == "neutral" and rt._face_id is None and rt._calibrator is not None
+    assert [e["data"] for e in rt.pop_events() if e["name"] == "face_id_done"] == [{"saved": True, "reason": ""}]
+    assert identity.identity_required("sam") and rt._identity_required
+
+
+def test_shared_profiles_and_no_camera_skip_face_id():
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))   # guest, mock: no camera
+    rt._do_calibrate("full")
+    assert rt._face_id is None and rt._calibrator is not None

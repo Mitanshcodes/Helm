@@ -22,18 +22,20 @@ export interface BreathResult {
 // attached, or alone from "Measure my breath".
 const isBreath = (step: string) => step.startsWith("breath");
 
-function chipsFor(mode: CalMode, breathConnected: boolean): string[] {
+function chipsFor(mode: CalMode, breathConnected: boolean, faceId: boolean): string[] {
   if (mode === "quick") return ["NEUTRAL"];
   if (mode === "breath") return ["BREATH"];
-  return breathConnected ? ["NEUTRAL", "RANGE", "MOVES", "BREATH"] : ["NEUTRAL", "RANGE", "MOVES"];
+  // A named profile's full calibration starts with Face ID (the engine runs it when it can: camera, model, name).
+  return [...(faceId ? ["FACE ID"] : []), "NEUTRAL", "RANGE", "MOVES", ...(breathConnected ? ["BREATH"] : [])];
 }
 
 function groupOf(step: string, chips: string[]): number {
-  const name = step === "neutral" ? "NEUTRAL" : RANGE_STEPS.includes(step) ? "RANGE" : isBreath(step) ? "BREATH" : "MOVES";
+  const name = step === "face_id" ? "FACE ID" : step === "neutral" ? "NEUTRAL" : RANGE_STEPS.includes(step) ? "RANGE" : isBreath(step) ? "BREATH" : "MOVES";
   return Math.max(0, chips.indexOf(name));
 }
 
 const HINT: Record<string, string> = {
+  face_id: "JUST YOU · LOOK AT THE CAMERA",
   neutral: "LOOK STRAIGHT · HOLD STILL",
   yaw_left: "TURN LEFT ←",
   yaw_right: "TURN RIGHT →",
@@ -62,9 +64,10 @@ export function useCalibrationTrack(state: HelmState | null, calibrating: boolea
   const step = state?.progress?.step;
   if (calibrating && step) {
     const t = track.current;
-    if (step === "neutral" && t.steps.length > 0 && t.steps[t.steps.length - 1] !== "neutral") {
-      track.current = { yaw: [0, 0], pitch: [0, 0], steps: [] }; // a new calibration started
-    }
+    const previous = t.steps[t.steps.length - 1];
+    // A new calibration starts with Face ID, or with neutral when Face ID did not run just before it.
+    const starts = step === "face_id" ? previous !== "face_id" : step === "neutral" && previous !== "neutral" && previous !== "face_id";
+    if (starts && t.steps.length > 0) track.current = { yaw: [0, 0], pitch: [0, 0], steps: [] };
     const now = track.current;
     if (now.steps[now.steps.length - 1] !== step) now.steps.push(step);
     if (state?.face && RANGE_STEPS.includes(step)) {
@@ -89,6 +92,7 @@ function Segments({ value }: { value: number }) {
 function detail(progress: Progress, track: Track, breath: number): string {
   const step = progress.step;
   if (isBreath(step)) return `BREATH ${breath < 0 ? "SIP" : breath > 0 ? "PUFF" : ""} ${Math.round(Math.abs(breath) * 100)}%`;
+  if (step === "face_id") return "Face ID: only you will be able to control this profile.";
   if (step === "neutral") return "Learning your resting face…";
   if (step.startsWith("yaw")) return `LEFT ${degrees(track.yaw[0])}    RIGHT ${degrees(track.yaw[1])}`;
   if (step.startsWith("pitch")) return `UP ${degrees(track.pitch[1])}    DOWN ${degrees(track.pitch[0])}`;
@@ -99,7 +103,8 @@ function detail(progress: Progress, track: Track, breath: number): string {
 
 export function CalibrationCard(props: { state: HelmState; progress: Progress; mode: CalMode; track: Track; onSkip?: () => void }) {
   const { state, progress, mode, track, onSkip } = props;
-  const chips = chipsFor(isBreath(progress.step) && mode === "quick" ? "breath" : mode, state.breath_connected);
+  const chips = chipsFor(isBreath(progress.step) && mode === "quick" ? "breath" : mode, state.breath_connected,
+    progress.step === "face_id" || track.steps.includes("face_id"));
   const group = groupOf(progress.step, chips);
   return (
     <div className="setup-card">
@@ -138,7 +143,13 @@ export interface CustomResult {
   accuracy: number | null; // leave-one-take-out, 0..1, once the model is trained
 }
 
-export function CalibrationDone({ state, mode, track, breath, custom }: { state: HelmState; mode: CalMode; track: Track; breath: BreathResult | null; custom?: CustomResult | null }) {
+export interface FaceIdResult {
+  saved: boolean;
+  reason: string;
+}
+
+export function CalibrationDone(props: { state: HelmState; mode: CalMode; track: Track; breath: BreathResult | null; custom?: CustomResult | null; faceId?: FaceIdResult | null }) {
+  const { state, mode, track, breath, custom, faceId } = props;
   const reliable = new Set(state.gestures?.reliable ?? []);
   const faces = EXPR_STEPS.filter(([, , sources]) => sources.length > 0);
   const found = faces.filter(([, , sources]) => sources.some((s) => reliable.has(s)));
@@ -155,6 +166,7 @@ export function CalibrationDone({ state, mode, track, breath, custom }: { state:
             `${found.length} ${found.length === 1 ? "move" : "moves"} found`,
             ...(weak.length ? [`${weak.map(([, l]) => l).join(", ")} too weak`] : []),
             ...breathPart,
+            ...(faceId ? [faceId.saved ? "Face ID on: only you control this profile" : faceId.reason] : []),
             ...(custom
               ? [`${humanize(custom.name)} learned${custom.accuracy !== null ? ` (${Math.round(custom.accuracy * 100)}% recognized)` : ""}${onX ? " · on X" : ""}`]
               : []),

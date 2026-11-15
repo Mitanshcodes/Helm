@@ -15,7 +15,7 @@ import { useFireClicks, useSetting, useSpokenPrompts } from "./feedback";
 import { HoldClock, buildRows } from "./moves";
 import { spokenTake, useTeachFlow } from "./teach";
 import { ProfileCard } from "./components/ProfileCard";
-import { CalibrationCard, CalibrationDone, cameraHint, useCalibrationTrack, type CalMode, type BreathResult, type CustomResult } from "./components/CalibrationCard";
+import { CalibrationCard, CalibrationDone, cameraHint, useCalibrationTrack, type CalMode, type BreathResult, type CustomResult, type FaceIdResult } from "./components/CalibrationCard";
 import { DevControls } from "./components/DevControls";
 import { CameraView, StatStamps } from "./components/CameraView";
 import { CoachPanel } from "./components/CoachPanel";
@@ -63,6 +63,7 @@ export default function App() {
   const calMode = useRef<CalMode>(QUICK ? "quick" : "full"); // the running (or last) calibration
   const [breathResult, setBreathResult] = useState<BreathResult | null>(null);
   const [customResult, setCustomResult] = useState<CustomResult | null>(null); // the nod the calibration taught
+  const [faceId, setFaceId] = useState<FaceIdResult | null>(null); // Face ID at the start of this calibration
   const [profiles, setProfiles] = useState<Record<string, string[]>>({});
   const sendRef = useRef<(cmd: Command) => void>(() => {});
   const [voice, setVoice] = useSetting("voice");
@@ -82,6 +83,11 @@ export default function App() {
       return;
     }
     if (teachRef.current?.onEvent(msg, playerRef.current)) return;
+    if (msg.name === "face_id_done") {
+      if (!data.saved && data.reason && data.reason !== "cancelled") setToast(String(data.reason));
+      setFaceId({ saved: Boolean(data.saved), reason: String(data.reason ?? "") });
+      return;
+    }
     if (msg.name === "breath_calibration_done") {
       // Comes after the face steps when a breath sensor is attached, or alone from "Measure my breath".
       setBreathResult({ puff: Number(data.max_puff_mv ?? 0), sip: Number(data.max_sip_mv ?? 0) });
@@ -243,7 +249,8 @@ export default function App() {
       />
     );
   else if (state && showingDone)
-    card = <CalibrationDone state={state} mode={calMode.current} track={track} breath={breathResult} custom={calMode.current === "full" ? customResult : null} />;
+    card = <CalibrationDone state={state} mode={calMode.current} track={track} breath={breathResult} custom={calMode.current === "full" ? customResult : null}
+      faceId={calMode.current === "full" && track.steps.includes("face_id") ? faceId : null} />;
   else if (state && teach.flow) {
     withCamera = teach.flow.stage === "ready_face";
     card = (
