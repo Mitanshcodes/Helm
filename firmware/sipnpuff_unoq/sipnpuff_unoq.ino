@@ -11,7 +11,8 @@
 // streams numbers: every threshold lives on the laptop in helm/sipnpuff.py.
 //
 // The LED matrix shows a bobbing "6-7" while it runs. It only redraws every BOB_MS, between
-// readings, so the sensor stream keeps its rate. Set SHOW_67 to false to turn it off.
+// readings, so the sensor stream keeps its rate. Set SHOW_67 to false to turn it off, and
+// FLIP_HORIZONTAL / FLIP_VERTICAL to mirror it left-right or top-bottom.
 //
 // Wiring: see firmware/sipnpuff/wiring_breadboard.png.
 //     sensor VCC  ->  5V
@@ -40,6 +41,8 @@ unsigned long next_ms = 0;
 
 // ---------------------------------------------------------------- LED matrix: bobbing "6-7"
 const bool SHOW_67 = true;
+const bool FLIP_HORIZONTAL = true;       // mirror the grid left-right (left column <-> right column)
+const bool FLIP_VERTICAL = true;         // draw the grid upside-down (top row <-> bottom row)
 const unsigned long BOB_MS = 250;        // how long each up/down step lasts: smaller = faster
 const int W = 13;                        // columns
 const int H = 8;                         // rows
@@ -88,6 +91,24 @@ void drawSixSeven() {
   drawDigit(SEVEN, 9, six_up ? 1 : 0);
   for (int c = 5; c <= 7; c++) {
     frame[4 * W + c] = 3;                // the dash, a bit dimmer than the digits
+  }
+  if (FLIP_HORIZONTAL) {
+    for (int r = 0; r < H; r++) {        // swap column c with its mirror column, row by row
+      for (int c = 0; c < W / 2; c++) {
+        uint8_t tmp = frame[r * W + c];
+        frame[r * W + c] = frame[r * W + (W - 1 - c)];
+        frame[r * W + (W - 1 - c)] = tmp;
+      }
+    }
+  }
+  if (FLIP_VERTICAL) {
+    for (int r = 0; r < H / 2; r++) {    // swap row r with its mirror row, column by column
+      for (int c = 0; c < W; c++) {
+        uint8_t tmp = frame[r * W + c];
+        frame[r * W + c] = frame[(H - 1 - r) * W + c];
+        frame[(H - 1 - r) * W + c] = tmp;
+      }
+    }
   }
   matrix.draw(frame);
   six_up = !six_up;
