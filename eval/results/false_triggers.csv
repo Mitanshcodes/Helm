@@ -1,0 +1,7 @@
+participant,segment,minutes,condition,fires,per_min,by_gesture
+p1,reading,1.0,baseline,9,9.0,eyes_closed:6;smile:3
+p1,reading,1.0,helm,7,7.0,nod_up:2;smile:5
+p1,chatting,1.0,baseline,41,40.99,eyes_closed:15;jaw_open:1;smile:25
+p1,chatting,1.0,helm,22,22.0,jaw_open:2;nod_up:6;smile:14
+p1,video,1.0,baseline,21,21.0,eyes_closed:21
+p1,video,1.0,helm,4,4.0,nod_up:4

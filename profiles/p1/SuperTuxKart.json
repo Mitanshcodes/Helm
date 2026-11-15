@@ -1,0 +1,87 @@
+{
+  "auto": {},
+  "axes": [
+    {
+      "curve": 1.5,
+      "deadzone": 0.08,
+      "invert": false,
+      "source": "yaw",
+      "target": "lx"
+    }
+  ],
+  "buttons": [
+    {
+      "gesture": "brow_raise",
+      "mode": "tap",
+      "target": "A"
+    },
+    {
+      "gesture": "smile",
+      "mode": "tap",
+      "target": "B"
+    },
+    {
+      "gesture": "jaw_open",
+      "mode": "tap",
+      "target": "Y"
+    },
+    {
+      "gesture": "nod_up",
+      "mode": "tap",
+      "target": "X"
+    }
+  ],
+  "game": "SuperTuxKart",
+  "gestures": {
+    "brow_raise": {
+      "kind": "blendshape",
+      "min_hold_ms": 100,
+      "off": 0.4,
+      "on": 0.6,
+      "sources": [
+        "browInnerUp"
+      ]
+    },
+    "eyes_closed": {
+      "combine": "min",
+      "kind": "blendshape",
+      "off": 0.6,
+      "on": 0.85,
+      "sources": [
+        "eyeBlinkLeft",
+        "eyeBlinkRight"
+      ]
+    },
+    "jaw_open": {
+      "kind": "blendshape",
+      "min_hold_ms": 100,
+      "off": 0.45,
+      "on": 0.7,
+      "sources": [
+        "jawOpen"
+      ]
+    },
+    "nod_up": {
+      "kind": "learned",
+      "off": 0.45,
+      "on": 0.65
+    },
+    "smile": {
+      "combine": "max",
+      "kind": "blendshape",
+      "min_hold_ms": 100,
+      "off": 0.4,
+      "on": 0.6,
+      "sources": [
+        "mouthSmileLeft",
+        "mouthSmileRight"
+      ]
+    }
+  },
+  "pause": {
+    "gesture": "eyes_closed",
+    "hold_ms": 2000
+  },
+  "player": "p1",
+  "triggers": []
+}

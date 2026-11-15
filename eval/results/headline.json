@@ -1,0 +1,22 @@
+{
+  "false_triggers": {
+    "baseline": {
+      "median_per_min": 23.666666666666668,
+      "participants": 1,
+      "per_participant": {
+        "p1": 23.666666666666668
+      }
+    },
+    "helm": {
+      "median_per_min": 11.0,
+      "participants": 1,
+      "per_participant": {
+        "p1": 11.0
+      }
+    }
+  },
+  "loto_accuracy": {
+    "median": 1.0,
+    "participants": 1
+  }
+}

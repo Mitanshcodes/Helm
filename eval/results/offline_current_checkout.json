@@ -1,0 +1,119 @@
+{
+  "scope": "Offline measurements taken on a macOS dev machine with no gamepad, no participants and no hardware. NOT the docs/SPEC.md section 12 study. H1 latency, H2 false triggers and H3 throughput remain unmeasured.",
+  "measured_on": "2026-11-15",
+  "commit": "f0abe64",
+  "machine": "macOS, Python 3.11.15, 640x480 webcam, output=null (no gamepad on this platform)",
+  "loto_accuracy": {
+    "what": "helm.gestures.GestureModel.fit(): holds out each complete take, refits selection and scaling inside each fold, classifies the held-out take by its median scores",
+    "learned_moves": {
+      "profiles": 3,
+      "classes": 5,
+      "median": 1.0,
+      "mean": 1.0,
+      "min": 1.0,
+      "max": 1.0
+    },
+    "none_class": {
+      "demo": 1.0,
+      "guest": 0.8,
+      "judge": 0.5454545454545454
+    },
+    "per_profile": {
+      "demo": {
+        "none": 1.0,
+        "sliding_jaw_right": 1.0
+      },
+      "guest": {
+        "sliding_jaw": 1.0,
+        "none": 0.8,
+        "sliding_right": 1.0
+      },
+      "judge": {
+        "jaw_moving": 1.0,
+        "none": 0.5454545454545454,
+        "sliding_jaw_right": 1.0
+      }
+    },
+    "caveat": "Three committed dev profiles, not three participants. Enrollment validation only: it is not event recall and not a new-session false-activation rate."
+  },
+  "false_triggers_offline": {
+    "what": "Leave-one-negative-take-out: hold out one recorded everyday-face take, refit on the rest, replay the held-out take through the real GestureEngine and Mapper via eval/learned_replay.evaluate. The held-out take is never in the training data.",
+    "held_out_takes": 27,
+    "everyday_face_seconds": 57.5,
+    "false_fires": 3,
+    "pooled_per_minute": 3.13,
+    "per_take_median_per_minute": 0.0,
+    "per_take_max_per_minute": 47.37,
+    "totally_clean_takes": "24/27",
+    "per_profile": {
+      "demo": {
+        "mapping": "SuperTuxKart.json",
+        "takes": 6,
+        "fires": 0,
+        "clean": "6/6"
+      },
+      "guest": {
+        "mapping": "default (every learned gesture -> A)",
+        "takes": 10,
+        "fires": 3,
+        "clean": "7/10",
+        "gesture": "sliding_right"
+      },
+      "judge": {
+        "mapping": "SuperTuxKart.json",
+        "takes": 11,
+        "fires": 0,
+        "clean": "11/11"
+      }
+    },
+    "finding": "All three fires came from the permissive default mapping, which puts every learned gesture on A. Under both real game mappings there were zero fires.",
+    "caveats": [
+      "57.5 s of everyday face against the protocol's 540 s (3 participants x 180 s).",
+      "Timestamps synthesised at 30 fps; the recordings carry no timestamps.",
+      "Takes are 0.5-14.8 s, so one fire in a 1.3 s take reports as 47/min. The pooled rate is the honest figure.",
+      "Enrollment negatives, not a fresh session of reading, chatting and watching."
+    ]
+  },
+  "software_latency": {
+    "control_path_only_mock_ms": {
+      "median_of_runs": 0.23,
+      "runs": [
+        0.28,
+        0.23,
+        0.21
+      ],
+      "frames": 1808,
+      "note": "mock bypasses MediaPipe: normalize -> gestures -> mapper -> pad only"
+    },
+    "full_pipeline_real_camera_ms": {
+      "median": 9.57,
+      "frames": 584,
+      "fps": 30.0,
+      "face_found_pct": 99.8,
+      "participants": 1,
+      "machine": "macOS dev machine, camera index 1, 640x480",
+      "note": "total_ms = t_output - t_capture. Software latency only, NOT motion-to-screen (H1)."
+    },
+    "voided": {
+      "median": 4.54,
+      "frames": 151,
+      "reason": "taken on camera index 0, which delivers black frames; MediaPipe does far less work with no face. Wrong by more than 2x."
+    },
+    "not_in_software_latency_csv": "One person on a dev machine is not a study row; pooling it with demo-laptop participants would mix machines inside one median."
+  },
+  "repo_health": {
+    "suite": {
+      "tests": 415,
+      "seconds": 13.68,
+      "cap_seconds": 10,
+      "status": "OVER CAP"
+    },
+    "smoke_run": {
+      "command": "python -m helm --mock --output null --no-server --seconds 3",
+      "exit": 0,
+      "fps": 30.1,
+      "median_total_ms": 0.29
+    }
+  },
+  "reproduce": "Scripts live in the session scratchpad, not the repo: loto.py and false_offline.py. They import helm.gestures and eval/learned_replay unchanged. eval/ is P3-owned, so they were not added there."
+}
