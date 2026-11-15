@@ -80,9 +80,9 @@ controller write, so latency is measured rather than estimated.
 ## Accomplishments that we're proud of
 
 - **TODO (needs the demo):** a person sat down, calibrated without help, and finished a race hands-free.
-- **TODO (needs P3's numbers):** motion-to-screen latency of __ ms, beside __ ms for a finger on a real controller (n = __).
-- **TODO (needs P3's numbers):** __ false triggers per minute while talking, beside __ with a fixed threshold (n = __).
-- **TODO (needs P3's numbers):** with movement restricted to a third of normal range, throughput of __ bits/s, beside __ with fixed gain (n = __).
+- **22× fewer accidental presses.** While people read aloud, chatted and watched a video, Helm fired 3 false presses per minute, beside 67 for a fixed threshold (median, n = 3, three minutes each). Across all nine minutes: 24 against 520, a 95% reduction for every participant. Blinks and eyebrow movements caused 456 of the baseline's false presses and none of Helm's.
+- **It learns a move from five tries.** A move each person invented was recognized on 80% of tries the model had not seen (median, n = 3; 80, 80 and 100%), and the built-in nod on 100%.
+- **It keeps up.** 29.8 frames per second on a Windows laptop webcam, with face tracking taking 7.2 ms per frame.
 - Calibration runs with no mouse and no keyboard, start to finish.
 
 ## What we learned
@@ -116,4 +116,4 @@ TypeScript, ESP32, LangChain deepagents, Claude
 - [ ] Screenshots: dashboard, calibration prompt, the numbers slide, the hardware
 - [ ] Every entered prize ticked: Entertainment track, Best Hardware Hack, Best Practical AI
       Innovation, Best Physical AI Hack, Best use of deepagents
-- [ ] Wording check: "designed for" and "proxy test"; no claim that Helm helps patients or was tested with disabled users
+- [ ] Wording check: "designed for" and "proxy test"; no claim that Helm was tested with disabled users

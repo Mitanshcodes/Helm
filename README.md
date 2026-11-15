@@ -506,7 +506,11 @@ Helm is not allowed to crash out of a race.
 | Test suite | **411 tests passing** | ✅ measured |
 | Motion-to-screen latency vs. a real Xbox pad | 240 fps slow-motion, 20 trials per condition — `eval/latency.html` | ⏳ not yet measured |
 | Restricted-range target test | `eval/target_test.html` | ⏳ not yet measured |
-| False triggers: fixed-threshold baseline vs. full Helm | the comparison that makes the calibration case | ⏳ not yet measured |
+| **False triggers: fixed-threshold baseline vs. full Helm** | **3.0 vs 67.4 per minute** (median, n = 3, Windows laptop, 3 min each of reading aloud, chatting, watching video). 24 vs 520 false presses in 9 min, a **95% reduction**, 94–96% for every participant. Blink and eyebrow false presses: 265 and 191 on the baseline, **0** with Helm | ✅ measured |
+| Learned move, recognized on unseen tries | **median 80%** (80 / 80 / 100%, leave-one-take-out, 5 takes each, n = 3); built-in nod 100% | ✅ measured |
+| Tracking on the demo laptop | **29.8 fps**, face tracking **7.2 ms** median per frame (n = 3, 16,083 frames) | ✅ measured |
+
+No participant had a motor impairment, and n = 3 is small: read the false-trigger result as a strong, consistent signal, not a clinical claim.
 
 We're keeping the bad number visible on purpose. An earlier, much prettier result (28/30 attempts,
 **zero** false events in 128.5 s) didn't generalize — it had reused recordings for feature

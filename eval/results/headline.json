@@ -1,22 +1,26 @@
 {
   "false_triggers": {
     "baseline": {
-      "median_per_min": 23.666666666666668,
-      "participants": 1,
+      "median_per_min": 67.37825216811207,
+      "participants": 3,
       "per_participant": {
-        "p1": 23.666666666666668
+        "soumya": 78.61425716189208,
+        "mitansh": 27.342447482494165,
+        "rishabh": 67.37825216811207
       }
     },
     "helm": {
-      "median_per_min": 11.0,
-      "participants": 1,
+      "median_per_min": 2.9980013324450367,
+      "participants": 3,
       "per_participant": {
-        "p1": 11.0
+        "soumya": 2.9980013324450367,
+        "mitansh": 1.0003334444814937,
+        "rishabh": 4.00266844563042
       }
     }
   },
   "loto_accuracy": {
-    "median": 1.0,
-    "participants": 1
+    "median": 0.9,
+    "participants": 4
   }
 }

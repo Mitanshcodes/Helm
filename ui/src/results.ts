@@ -10,6 +10,6 @@ export interface Measured {
 
 export const RESULTS: Record<"latency" | "falseTriggers" | "throughput", Measured> = {
   latency: { helm: null, baseline: null, participants: null }, // median motion-to-screen, ms; baseline = real controller
-  falseTriggers: { helm: null, baseline: null, participants: null }, // median per minute; baseline = fixed threshold 0.5
+  falseTriggers: { helm: 3, baseline: 67.38, participants: 3 }, // median per minute; baseline = fixed threshold 0.5
   throughput: { helm: null, baseline: null, participants: null }, // bits/s, restricted movement; baseline = fixed gain
 };

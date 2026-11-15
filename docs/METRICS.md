@@ -18,18 +18,18 @@ Status vocabulary used below:
 
 ## 1. Status board
 
-Checked against a clean run of `python eval/analysis.py` (2026-11-15): all three headline numbers
-print "not measured", and `ui/src/results.ts` is still all `null`.
+Checked against `python eval/analysis.py` (2026-11-15, after the Windows sessions in §13): H2 is measured at
+n = 3 and is in `ui/src/results.ts`; H1 and H3 print "not measured".
 
 | # | Metric | Baseline it is reported against | Lands in | Status | Gate |
 |---|---|---|---|---|---|
 | **H1** | Motion-to-screen latency, median + p90 | real controller, finger press | `latency.csv` | NOT MEASURED | 240 fps phone + human |
-| **H2** | False triggers per minute | fixed 0.5 threshold, no calibration | `false_triggers.csv` | **MEASURED n=1**: 11.00 vs 23.67 (§12) | 2 more participants |
+| **H2** | False triggers per minute | fixed 0.5 threshold, no calibration | `false_triggers.csv` | **MEASURED n=3, Windows: 3.00 vs 67.38** (§13) | — |
 | **H3** | Pointing throughput, bits/s | same small movements at fixed gain | `target_*.csv` | NOT MEASURED | human at the target page |
-| F1 | Software latency, median `total_ms` | — (reported alongside H1) | §11 | **MEASURED: 9.57 ms**, 1 person, dev machine | 3 study participants on the laptop |
-| F2 | Learned-gesture accuracy (leave-one-take-out) | — | `participants.csv` | **MEASURED, 3 profiles** (§8) | 3 real participants |
+| F1 | Software latency, median `total_ms` | — (reported alongside H1) | §11, §13 | **MEASURED: 9.57 ms**, 1 person, dev machine; Windows: face tracking **7.2 ms**/frame, n=3 (§13) | total_ms for the 3 Windows runs |
+| F2 | Learned-gesture accuracy (leave-one-take-out) | — | `participants.csv` | **MEASURED n=3, Windows: median 0.80** (§13) | — |
 | F3 | Launch to first race, seconds | — | `participants.csv` | NOT MEASURED | demo laptop + game |
-| F4 | Participant count *n* | — | `participants.csv` | **1 of 3** (p1) | 2 more humans |
+| F4 | Participant count *n* | — | `participants.csv` | **3 of 3 on Windows** (soumya, mitansh, rishabh); p1 is a macOS pilot | — |
 | B1 | Breath rest baseline and noise | — | §9 | **MEASURED live: 2392 mV, 40 mV p-p, sd 2.9** | — |
 | B2 | Breath committed-swing displacement | rest noise | §9 | **MEASURED live: sip 1954-2372, puff 1479-2394 mV (n=4 each)** | — |
 | B3 | Serial link line-loss rate | — | `docs/status/P2.md` | BENCH | — |
@@ -433,6 +433,61 @@ lacks. State this whenever the comparison is reported.
   Either finish all three here, or treat this as a pilot and redo it there.
 - 11/min is a false trigger every 5.5 s. That is a mapping problem more than a tracking problem,
   and the breakdown names the gesture responsible.
+
+---
+
+## 13. H2 measured on Windows, n = 3 (2026-11-15)
+
+Run by P4 on the demo-class Windows laptop (Lenovo Yoga 7, built-in webcam), following `eval/PROTOCOL.md` §2
+exactly: a named profile per person (full setup, then Teach a move with the everyday face ticked), then
+`python -m helm --player NAME --no-server --seconds 180 --record eval/results/rec_NAME.npz`, 1 min reading aloud
+(a text not in `ui/src/readingTexts.ts`), 1 min chatting, 1 min watching gameplay. Scored with
+`python eval/false_triggers.py eval/results/rec_soumya.npz eval/results/rec_mitansh.npz eval/results/rec_rishabh.npz
+--game SuperTuxKart`, no warnings. The scorer reproduces §12's p1 numbers exactly on this machine (11.00 / 23.67).
+
+**Pooling decision:** following §12's caveat, `p1` (macOS) is **not** pooled. `false_triggers.csv` holds the three
+Windows participants only; `rec_p1.npz` stays on disk as the pilot.
+
+| participant | frames | fps | face found | baseline / min | **Helm / min** | reduction |
+|---|---|---|---|---|---|---|
+| soumya | 5349 | 29.7 | 100% | 78.61 | **3.00** | 96.2% (26×) |
+| mitansh | 5366 | 29.8 | 96.1% | 27.34 | **1.00** | 96.3% (27×) |
+| rishabh | 5368 | 29.8 | 84.4% | 67.38 | **4.00** | 94.1% (17×) |
+| **median** | | | | **67.38** | **3.00** | **≈ 22×** |
+
+Pooled over all 9 minutes: **520 false presses with the baseline, 24 with Helm (95.4% fewer).** Helm had zero
+false presses in 2 of the 9 minutes.
+
+| minute (median of 3) | baseline | Helm |
+|---|---|---|
+| reading aloud | 46.0 | **2.0** |
+| chatting | 80.0 | **4.0** |
+| watching video | 68.0 | **2.0** |
+
+By gesture, all 9 minutes: baseline eyes_closed 265, brow_raise 191, smile 62, jaw_open 2; Helm nod_up 13,
+smile 7, jaw_open 4.
+
+1. **Blinks and eyebrows: 456 baseline false presses, 0 with Helm.** The 2 s pause hold rejects every blink
+   (confirms §12 on three more people), and per-player calibration removes the eyebrow fires. soumya's resting
+   inner-brow score sits near the fixed 0.5 line (calibration marked `browInnerUp` unreliable for her), which is
+   exactly the failure a fixed threshold cannot see.
+2. **Smile is much better than in the pilot** (7 Helm fires in 9 min against 14 in p1's one chatting minute).
+3. **The learned nod is now Helm's main source** (13 of 24). As in §12, the baseline has no learned class and
+   cannot fire it, so Helm is charged for a capability the baseline lacks; state this with the number.
+
+**F2 (leave-one-take-out, 5 takes):** own move soumya 0.80, mitansh 0.80, rishabh 1.00 (median **0.80**);
+`nod_up` 1.00 for all three; `none` 0.923 for all three. Logged in `participants.csv` (p1's 1.0 is still listed
+there; `analysis.py` reports 0.90 with it, 0.80 without).
+
+**Tracking speed (from the recordings' `t_infer_ns − t_capture_ns`):** face tracking median 7.2 / 6.8 / 16.0 ms
+per frame (rishabh's runs Face ID's check alongside), 29.7–29.8 fps, 16,083 frames, face found in 93.5%. This is
+vision time only, not `total_ms`; the end-of-run `median total latency` lines for these runs were not captured.
+
+### Caveats that must travel with the number
+
+- n = 3, all teammates, no motor impairment; the participants knew the system.
+- Same laptop, room and lighting for all three; one session each.
+- Not yet measured: H1, H3, F3.
 
 ---
 
