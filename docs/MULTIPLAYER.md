@@ -74,3 +74,37 @@ accuracy or two-controller compatibility with a particular Windows game.
 The browser demo (`?mock=1`) supplies explicitly simulated faces and independent outputs
 for UI testing. Backend `--mock` does not simulate trusted identities and cannot arm real
 multiplayer sessions.
+
+## SuperTuxKart: both controllers must join the race
+
+Helm's profile-to-controller assignments are separate from SuperTuxKart's
+controller-to-kart assignments. Enable Helm multiplayer before launching the game
+so both virtual pads exist. In the game's local multiplayer kart-selection screen,
+join separately using each virtual controller's Fire/Select input, then select
+each player's kart. Using the keyboard to select players does not establish the
+two virtual pads' ownership. Configure acceleration to match each profile's output
+(normally RT); the game's defaults need not match Helm's mappings.
+
+SuperTuxKart's [input manager](https://github.com/supertuxkart/stk-code/blob/master/src/input/input_manager.cpp)
+assigns the device that emits Fire/Select to the joining player. Its
+[single-player routing](https://github.com/supertuxkart/stk-code/blob/master/src/input/device_manager.cpp)
+can accept several devices for the same player. Treat an assignment problem as a
+diagnostic possibility, not proof of the cause of a particular failure.
+
+If Helm shows both players accelerating but the game does not, run this from
+Helm's repository on the Windows machine while both applications remain running:
+
+```powershell
+python eval/xinput_watch.py --seconds 30 --output xinput.jsonl
+```
+
+The monitor calls Windows `XInputGetState` for slots 0–3, creates no devices and
+sends no commands. Hold P1 acceleration, add P2, then release each independently.
+RT/LT values are 0–255. The indices are Windows slots, not Helm controller numbers;
+disconnect unrelated physical pads to identify Helm's devices unambiguously.
+
+If both Windows slots retain their RT values during the failure, check the game's
+bindings/player assignments. If a Windows slot drops while its Helm preview stays
+active, keep the JSONL log to investigate the virtual-output/driver path. If the
+Helm preview also drops, inspect tracking/identity/mapping instead. This monitor
+distinguishes those paths; it does not certify a driver or game fix.

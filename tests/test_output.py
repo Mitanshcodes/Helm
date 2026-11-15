@@ -160,6 +160,28 @@ def test_second_virtual_controller_is_independent_and_starts_without_a_button_pr
     assert vpad._pressed == frozenset()
 
 
+def test_two_virtual_pads_hold_identical_inputs_and_release_independently(vpad):
+    second = second_gamepad(vpad)
+    held = ControlState(rt=1, buttons=frozenset({'A'}))
+    for _ in range(600):
+        vpad.apply(held)
+        second.apply(held)
+    a = f"<{_XUSB_NAMES['A']}>"
+    assert vpad._pressed == second._pressed == frozenset({'A'})
+    assert [c for c in vpad._pad.calls if c[0] == 'rt'][-1] == ('rt', 1)
+    assert [c for c in second._pad.calls if c[0] == 'rt'][-1] == ('rt', 1)
+    vpad._pad.calls.clear()
+    second._pad.calls.clear()
+    vpad.apply(ControlState())
+    second.apply(held)
+    assert ('release', a) in vpad._pad.calls and ('rt', 0) in vpad._pad.calls
+    assert ('release', a) not in second._pad.calls and ('rt', 1) in second._pad.calls
+    assert second._pressed == frozenset({'A'})
+    vpad.apply(held)
+    second.apply(ControlState())
+    assert vpad._pressed == frozenset({'A'}) and not second._pressed
+
+
 def test_keyboard_cannot_be_shared_as_two_controllers(kbpad):
     with pytest.raises(ValueError, match='keyboard'):
         second_gamepad(kbpad)
