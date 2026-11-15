@@ -52,7 +52,7 @@ _XUSB_NAMES = {
 class VGamepadPad(Gamepad):
     """Virtual Xbox 360 pad through ViGEmBus. Windows only."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, wake: bool = True) -> None:
         import vgamepad   # lazy: Windows only, and only when this backend is chosen
 
         self._pad = vgamepad.VX360Gamepad()
@@ -63,11 +63,12 @@ class VGamepadPad(Gamepad):
         }
         self._pressed: frozenset[str] = frozenset()
         # Tap one button once after creation or the game may never notice the pad.
-        a = self._buttons["A"]
-        self._pad.press_button(button=a)
-        self._pad.update()
-        self._pad.release_button(button=a)
-        self._pad.update()
+        if wake:
+            a = self._buttons["A"]
+            self._pad.press_button(button=a)
+            self._pad.update()
+            self._pad.release_button(button=a)
+            self._pad.update()
 
     def apply(self, state: ControlState) -> None:
         self._pad.left_joystick_float(x_value_float=_clamp(state.lx), y_value_float=_clamp(state.ly))
@@ -137,6 +138,15 @@ class KeyboardPad(Gamepad):
             except Exception:
                 pass
         self._held = set()
+
+
+def second_gamepad(primary: Gamepad) -> Gamepad:
+    """Distinct output only; a shared keyboard cannot represent two independent gamepads."""
+    if isinstance(primary, VGamepadPad):
+        return VGamepadPad(wake=False)
+    if isinstance(primary, NullPad):
+        return NullPad()
+    raise ValueError('Multiplayer needs virtual gamepads; keyboard output supports singleplayer only')
 
 
 def make_gamepad(kind: str = "auto") -> Gamepad:

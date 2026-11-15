@@ -308,7 +308,7 @@ export default function App() {
   if (!state || !picked.current) {
     return (
       <>
-        {screen !== "intro" && <ProfilePicker profiles={profiles} ready={Boolean(state) && !offline} onPick={pick} />}
+        {screen !== "intro" && <ProfilePicker profiles={profiles} ready={Boolean(state) && !offline} onPick={pick} state={state} frame={frame} send={send} />}
         {intro}
         {screen !== "intro" && offline && connection === "closed" && lost}
         {toastEl}
@@ -318,7 +318,7 @@ export default function App() {
   if (screen === "pick") {
     return (
       <>
-        <ProfilePicker profiles={profiles} ready={!offline} onPick={pick} />
+        <ProfilePicker profiles={profiles} ready={!offline} onPick={pick} state={state} frame={frame} send={send} />
         {offline && lost}
         {toastEl}
       </>

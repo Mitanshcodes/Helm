@@ -12,7 +12,7 @@ from helm.main import Runtime, parse_args
 from helm.profiles import default_mapping
 
 STATE_KEYS = {"type", "fps", "latency_ms", "face", "paused", "breath_connected", "profile", "raw", "axes",
-              "breath", "activations", "thresholds", "control", "fired", "progress", "gestures", "notices", "mapping", "expressions", "catalog", "dev", "breath_marks", "ranges", "identity"}
+              "breath", "activations", "thresholds", "control", "fired", "progress", "gestures", "notices", "mapping", "expressions", "catalog", "dev", "breath_marks", "ranges", "identity", "multiplayer"}
 
 
 def _run(runtime: Runtime, until, timeout: float = 3.0) -> None:

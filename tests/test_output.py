@@ -3,7 +3,7 @@
 import pytest
 
 from helm.contracts import ControlState
-from helm.output import Gamepad, NullPad, make_gamepad
+from helm.output import Gamepad, NullPad, make_gamepad, second_gamepad
 
 
 def test_null_pad_stores_last_state():
@@ -149,6 +149,20 @@ def test_vgamepad_taps_a_button_once_at_creation(vpad):
     a = f"<{_XUSB_NAMES['A']}>"
     assert vpad._pad.calls == [("press", a), ("release", a)]
     assert vpad._pad.updates == 2
+
+
+def test_second_virtual_controller_is_independent_and_starts_without_a_button_press(vpad):
+    second = second_gamepad(vpad)
+    assert second._pad is not vpad._pad
+    assert second._pad.calls == []
+    second.apply(ControlState(buttons=frozenset({'B'})))
+    assert second._pressed == frozenset({'B'})
+    assert vpad._pressed == frozenset()
+
+
+def test_keyboard_cannot_be_shared_as_two_controllers(kbpad):
+    with pytest.raises(ValueError, match='keyboard'):
+        second_gamepad(kbpad)
 
 
 def test_vgamepad_presses_and_releases_only_changed_buttons(vpad):
