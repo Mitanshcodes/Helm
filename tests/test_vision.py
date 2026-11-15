@@ -44,6 +44,25 @@ def test_blend_filled_by_name_not_index():
     assert b[0] == pytest.approx(0.1) and b.sum() == pytest.approx(0.8)
 
 
+def test_tracker_preserves_depth_without_changing_preview_coordinates():
+    from helm.vision import FaceTracker
+
+    tracker = object.__new__(FaceTracker)
+    tracker._mp = SimpleNamespace(ImageFormat=SimpleNamespace(SRGB=1), Image=lambda **kwargs: kwargs)
+    tracker._last_ts_ms = -1
+    tracker._names_checked = True
+    points = [SimpleNamespace(x=i / 478, y=.4, z=-.02) for i in range(478)]
+    result = SimpleNamespace(face_landmarks=[points], face_blendshapes=[[]],
+                             facial_transformation_matrixes=[np.eye(4)])
+    tracker._landmarker = SimpleNamespace(detect_for_video=lambda image, timestamp: result)
+    f = tracker.process(np.zeros((120, 160, 3), np.uint8), 1_000_000, 1)
+    assert f.face and f.landmarks.shape == (478, 2)
+    assert f.landmarks3d.shape == (478, 3) and f.landmarks3d.dtype == np.float32
+    assert f.landmarks3d.size == 1434
+    np.testing.assert_array_equal(f.landmarks, f.landmarks3d[:, :2])
+    np.testing.assert_allclose(f.landmarks3d[:, 2], -.02)
+
+
 @pytest.mark.skipif(not os.path.exists(config.MODEL_PATH), reason="model file not present")
 def test_tracker_on_a_blank_frame():
     pytest.importorskip("mediapipe")

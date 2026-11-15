@@ -36,6 +36,7 @@ class FrameFeatures:                                # P1 vision -> everyone
     roll: float = 0.0                               # + = tilt toward their own right shoulder
     blend: np.ndarray = field(default_factory=lambda: np.zeros(N_BLEND, np.float32))
     landmarks: np.ndarray | None = None             # (478, 2) float32 in [0, 1], for the preview only
+    landmarks3d: np.ndarray | None = None           # (478, 3) raw MediaPipe x,y,z; None when no face
 
 @dataclass(slots=True)
 class Calibration:                                  # P1 calibration -> P2 profiles, P3 gestures
