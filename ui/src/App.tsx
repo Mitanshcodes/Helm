@@ -18,7 +18,7 @@ import { ProfileCard } from "./components/ProfileCard";
 import { CalibrationCard, CalibrationDone, cameraHint, useCalibrationTrack, type CalMode, type BreathResult, type CustomResult, type FaceIdResult } from "./components/CalibrationCard";
 import { DevControls } from "./components/DevControls";
 import { CameraView, StatStamps } from "./components/CameraView";
-import { CoachPanel } from "./components/CoachPanel";
+import { CoachPanel, type CaptainUndo } from "./components/CoachPanel";
 import { GestureRecorder } from "./components/GestureRecorder";
 import { Intro } from "./components/Intro";
 import { MappingView } from "./components/MappingView";
@@ -46,6 +46,8 @@ type Screen = "intro" | "pick" | "dash";
 export default function App() {
   const [coach, setCoach] = useState<CoachResult | null>(null);
   const [coachBusy, setCoachBusy] = useState(false);
+  const [captainSteps, setCaptainSteps] = useState<string[]>([]); // what the Captain is doing, live
+  const [captainUndo, setCaptainUndo] = useState<CaptainUndo | null>(null);
   const [applied, setApplied] = useState<Mapping | null>(null); // last mapping this page knows was applied
   const [mappingStatus, setMappingStatus] = useState<MappingStatus>({ errors: [], applied: false });
   const [toast, setToast] = useState<string | null>(null);
@@ -100,6 +102,11 @@ export default function App() {
       setDoneAt(performance.now());
       return;
     }
+    if (msg.name === "captain_step") {
+      const text = String(data.text ?? "");
+      setCaptainSteps((steps) => (data.start ? [text] : [...steps, text]));
+      return;
+    }
     if (msg.name === "coach_result") {
       setCoach(data as unknown as CoachResult);
       setCoachBusy(false);
@@ -131,7 +138,11 @@ export default function App() {
 
   const send = useCallback(
     (cmd: Command) => {
-      if (cmd.cmd === "coach_build" || cmd.cmd === "coach_review") setCoachBusy(true);
+      if (cmd.cmd === "coach_build" || cmd.cmd === "coach_review" || cmd.cmd === "coach_ask") {
+        setCoachBusy(true);
+        setCoach(null);
+        setCaptainSteps([]);
+      }
       if (cmd.cmd === "calibrate") {
         calMode.current = cmd.mode;
         setFaceId(null); // Face ID (named profiles) reports after this calibration's head-movement steps
@@ -338,7 +349,8 @@ export default function App() {
       label: "Captain",
       blurb: "Let the AI map your moves",
       badge: coachBusy ? "…" : coach ? "NEW" : undefined,
-      body: <CoachPanel state={state} send={send} result={coach} busy={coachBusy} apply={applyMapping} />,
+      body: <CoachPanel state={state} send={send} result={coach} busy={coachBusy} steps={captainSteps} apply={applyMapping}
+        undo={captainUndo} setUndo={setCaptainUndo} />,
     },
     {
       id: "moves",

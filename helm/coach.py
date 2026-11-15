@@ -612,8 +612,8 @@ def _backend() -> str:
 
 
 def _claude_cli() -> str | None:
-    """The Claude Code executable (claude, or claude.cmd on Windows), if installed."""
-    return shutil.which("claude")
+    """The Claude Code executable (claude, or claude.cmd on Windows), from PATH or the usual install folders."""
+    return find_claude()
 
 
 def _claude_context(session: _Session, task: str) -> str:
@@ -640,7 +640,7 @@ def _run_claude(session: _Session, task: str) -> tuple[dict, list[str]] | None:
         return None
     model = os.environ.get("HELM_COACH_CLAUDE_MODEL", config.COACH_CLAUDE_MODEL)
     env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
-    cmd = [exe, "-p", "--output-format", "json", "--model", model, "--no-session-persistence",
+    cmd = [exe, "-p", "--output-format", "json", "--model", model, "--no-session-persistence", "--effort", os.environ.get("HELM_CAPTAIN_EFFORT", config.CAPTAIN_EFFORT),
            "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch",
            "--system-prompt", _CLAUDE_SYSTEM, "--json-schema", json.dumps(_CLAUDE_SCHEMA)]
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -804,3 +804,410 @@ def review_session(mapping: dict, stats: dict, calib: Calibration, learned: list
     changes = filled + changes
     return {"mapping": reviewed,
             "changes": (changes or ["offline review: no changes needed"]) + _offline_note(session)}
+
+
+# ------------------------------------------------------------------ the Captain: talk to it, it edits your mapping
+#
+# One fast Claude Code call on the player's own Claude login (no API key, no web search for a known game, no
+# plugins or MCP servers). Everything it needs is in the message: the game's controls, what this player can do,
+# the current mapping and the request. It answers with a short list of CHANGES, never a whole mapping, and Helm
+# applies them to the current mapping, so every setting it does not name (steering sensitivity, sliders, hold
+# times) stays exactly as it was. Helm checks the result; a change that does not fit is skipped and reported, and
+# only a result that still fails validation is sent back once to be fixed.
+
+CAPTAIN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "changes": {"type": "array", "items": {"type": "object", "properties": {
+            "op": {"enum": ["button", "clear", "analog", "auto", "threshold", "steering", "axis", "pause"]},
+            "target": {"type": "string"}, "gesture": {"type": "string"},
+            "mode": {"enum": ["tap", "hold", "toggle"]}, "source": {"type": "string"},
+            "value": {"type": "number"}, "on": {"type": "number"}, "off": {"type": "number"},
+            "min_hold_ms": {"type": "number"}, "gain": {"type": "number"}, "deadzone": {"type": "number"},
+            "curve": {"type": "number"}, "invert": {"type": "boolean"}, "hold_ms": {"type": "number"},
+            "reason": {"type": "string"}},
+            "required": ["op", "reason"]}},
+    },
+    "required": ["summary", "changes"],
+}
+
+CAPTAIN_SYSTEM = """You are the Captain inside Helm, a hands-free game controller: head movement drives the sticks, \
+face expressions and learned personal moves press buttons, and an optional sip-and-puff sensor adds breath. You \
+change the player's CURRENT mapping to do what they ask, as little as possible, and explain each change in one \
+short sentence a player reads (at most 15 words).
+
+Answer with a list of changes. Each change is one operation:
+- {"op":"button","target":T,"gesture":G,"mode":"tap"|"hold"|"toggle"}: G presses T (a pad button or lt/rt). \
+"hold" for actions held down (nitro, skid, brake), "tap" for presses, "toggle" for on/off.
+- {"op":"clear","target":T}: nothing drives T any more.
+- {"op":"analog","target":"lt"|"rt","source":G}: the trigger follows how strongly G is made (breath_sip, \
+breath_puff, or an expression).
+- {"op":"auto","target":T,"value":1}: T is held all the time (e.g. accelerate); value 0 removes it.
+- {"op":"threshold","gesture":G,"on":0..1,"off":0..1,"min_hold_ms":ms}: how hard G must be made: raise "on" (and \
+"min_hold_ms" to 150-250) if it fires by accident, lower it if it is hard to trigger. Keep off about 0.2 below on.
+- {"op":"steering","gain":0.5..3,"deadzone":0..0.3,"curve":1..3,"invert":bool}: steering on the left stick. Higher \
+gain = less head turn for full lock (use it when steering needs too much turning); lower gain or a bigger \
+deadzone when it is twitchy.
+- {"op":"axis","target":"lx"|"ly"|"rx"|"ry","source":"yaw"|"pitch"|"roll"|"none","invert":bool}: a head movement \
+on a stick axis.
+- {"op":"pause","gesture":G,"hold_ms":ms}: the gesture held to pause and resume.
+Use only gesture names from the player's gesture list. Prefer gestures marked usable; a gesture marked weak only \
+when the player asks for it. Never give two different targets the same gesture unless asked. Held actions should \
+not share a muscle group. If the request needs nothing changed, return no changes and say why in the summary. \
+Keep the summary to one sentence. Be quick: no long deliberation. After the structured output, reply with \
+just: done"""
+
+
+def _claude_paths() -> list[str]:
+    """Where Claude Code usually lives, for when it is not on PATH (a terminal opened before the install)."""
+    home = Path.home()
+    found = [shutil.which("claude"), os.environ.get("HELM_CLAUDE_PATH")]
+    if sys.platform == "win32":
+        appdata, local = os.environ.get("APPDATA", ""), os.environ.get("LOCALAPPDATA", "")
+        found += [str(home / ".local" / "bin" / "claude.exe"), str(Path(appdata) / "npm" / "claude.cmd"),
+                  str(Path(local) / "Programs" / "claude" / "claude.exe"), str(home / ".claude" / "local" / "claude.exe")]
+    else:
+        found += [str(home / ".local" / "bin" / "claude"), str(home / ".claude" / "local" / "claude"),
+                  "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+    return [p for p in found if p]
+
+
+def find_claude() -> str | None:
+    """The Claude Code executable, from PATH or the usual install folders."""
+    for path in _claude_paths():
+        if Path(path).is_file():
+            return path
+    return None
+
+
+def _gesture_menu(calib: Calibration, learned: list[str], has_breath: bool, game: str) -> dict[str, dict]:
+    """Every gesture the Captain may use: name -> {definition, label, usable}."""
+    return {g["name"]: g for g in gesture_catalog(calib, learned, has_breath, game)["gestures"]}
+
+
+def _binding_text(m: dict, target: str, menu: dict) -> str:
+    def label(name: str) -> str:
+        return (menu.get(name) or {}).get("label", name.replace("_", " "))
+    for b in m.get("buttons") or []:
+        if b.get("target") == target:
+            return f"{label(b.get('gesture', '?'))} ({b.get('mode', 'tap')})"
+    for t in m.get("triggers") or []:
+        if t.get("target") == target:
+            return f"{label(t.get('source', '?'))} (analog)"
+    if (m.get("auto") or {}).get(target):
+        return "always on"
+    for a in m.get("axes") or []:
+        if a.get("target") == target:
+            return f"head {a.get('source')}"
+    return "nothing"
+
+
+def _drivers_removed(m: dict, target: str) -> None:
+    m["buttons"] = [b for b in m.get("buttons") or [] if b.get("target") != target]
+    m["triggers"] = [t for t in m.get("triggers") or [] if t.get("target") != target]
+    if target in (m.get("auto") or {}):
+        del m["auto"][target]
+
+
+def apply_changes(mapping: dict, changes: list[dict], menu: dict) -> tuple[dict, list[dict], list[str]]:
+    """Apply the Captain's changes to a copy of `mapping`. Returns (new mapping, applied changes, skipped notes).
+    A change that does not fit (unknown gesture or target, bad numbers) is skipped, not guessed."""
+    m = copy.deepcopy(mapping)
+    for key, empty in (("buttons", []), ("triggers", []), ("axes", []), ("gestures", {}), ("auto", {})):
+        if not isinstance(m.get(key), type(empty)):
+            m[key] = copy.deepcopy(empty)
+    applied, skipped = [], []
+
+    def need_gesture(name: str) -> bool:
+        if name in m["gestures"]:
+            return True
+        if name in menu:
+            m["gestures"][name] = copy.deepcopy(menu[name]["definition"])
+            return True
+        return False
+
+    def number(c: dict, key: str, lo: float, hi: float) -> float | None:
+        v = c.get(key)
+        return min(max(float(v), lo), hi) if isinstance(v, (int, float)) else None
+
+    for c in changes:
+        op, target, gesture = c.get("op"), c.get("target"), c.get("gesture")
+        try:
+            if op == "button":
+                if target not in PAD_BUTTONS + PAD_TRIGGERS or not gesture or not need_gesture(gesture):
+                    raise ValueError(f"cannot put {gesture!r} on {target!r}")
+                mode = c.get("mode") if c.get("mode") in ("tap", "hold", "toggle") else "tap"
+                if m["gestures"][gesture].get("kind") == "breath" and mode == "hold":
+                    mode = "tap"                   # a breath event lasts one tick: it cannot be held
+                _drivers_removed(m, target)
+                m["buttons"].append({"gesture": gesture, "target": target, "mode": mode})
+            elif op == "clear":
+                if target not in PAD_BUTTONS + PAD_TRIGGERS + PAD_AXES:
+                    raise ValueError(f"unknown target {target!r}")
+                _drivers_removed(m, target)
+                m["axes"] = [a for a in m["axes"] if a.get("target") != target]
+            elif op == "analog":
+                source = c.get("source") or gesture
+                if target not in PAD_TRIGGERS or not source or (source not in _BREATH_SOURCES and not need_gesture(source)):
+                    raise ValueError(f"cannot drive {target!r} from {source!r}")
+                if source in _BREATH_SOURCES:
+                    need_gesture(source)
+                if (m["gestures"].get(source) or {}).get("kind") == "breath":
+                    raise ValueError(f"{source} fires once, it cannot be analog")
+                _drivers_removed(m, target)
+                m["triggers"].append({"source": source, "target": target, "lo": 0.15, "hi": 0.85})
+            elif op == "auto":
+                if target not in PAD_BUTTONS + PAD_TRIGGERS + PAD_AXES:
+                    raise ValueError(f"unknown target {target!r}")
+                value = float(c.get("value", 1.0))
+                _drivers_removed(m, target)
+                if value:
+                    m["auto"][target] = value
+            elif op == "threshold":
+                g = m["gestures"].get(gesture)
+                if not isinstance(g, dict) or "on" not in g:
+                    raise ValueError(f"{gesture!r} is not in the mapping")
+                on = number(c, "on", 0.1, 0.95)
+                if on is not None:
+                    g["on"] = round(on, 2)
+                    g["off"] = round(number(c, "off", 0.05, on - 0.05) or max(0.05, on - 0.2), 2)
+                hold = number(c, "min_hold_ms", 0, 500)
+                if hold is not None and g.get("kind") != "breath":
+                    g["min_hold_ms"] = int(hold)
+            elif op == "steering":
+                axis = next((a for a in m["axes"] if a.get("target") == "lx"), None)
+                if axis is None:
+                    raise ValueError("steering is not on the left stick")
+                for key, lo, hi in (("gain", config.STEER_GAIN_MIN, config.STEER_GAIN_MAX), ("deadzone", 0.0, 0.3),
+                                    ("curve", 1.0, 3.0)):
+                    v = number(c, key, lo, hi)
+                    if v is not None:
+                        axis[key] = round(v, 2)
+                if isinstance(c.get("invert"), bool):
+                    axis["invert"] = c["invert"]
+            elif op == "axis":
+                source = c.get("source")
+                if target not in PAD_AXES or source not in ("yaw", "pitch", "roll", "none"):
+                    raise ValueError(f"cannot put head {source!r} on {target!r}")
+                current = next((a for a in m["axes"] if a.get("target") == target), None)
+                m["axes"] = [a for a in m["axes"] if a.get("target") != target]
+                if source != "none":
+                    new = dict(current or {"deadzone": config.AXIS_DEADZONE, "curve": config.AXIS_GAMMA, "invert": False})
+                    new.update(source=source, target=target)
+                    if isinstance(c.get("invert"), bool):
+                        new["invert"] = c["invert"]
+                    m["axes"].append(new)
+            elif op == "pause":
+                if not gesture or not need_gesture(gesture):
+                    raise ValueError(f"cannot pause with {gesture!r}")
+                hold = number(c, "hold_ms", 1000, 4000)
+                m["pause"] = {"gesture": gesture, "hold_ms": int(hold) if hold else (m.get("pause") or {}).get("hold_ms", config.PAUSE_HOLD_MS)}
+            else:
+                raise ValueError(f"unknown change {op!r}")
+            applied.append(c)
+        except (ValueError, TypeError) as e:
+            skipped.append(f"Skipped a change: {e}")
+    used = ({b.get("gesture") for b in m["buttons"]} | {t.get("source") for t in m["triggers"]}
+            | {(m.get("pause") or {}).get("gesture")})
+    m["gestures"] = {n: g for n, g in m["gestures"].items() if n in used}
+    return m, applied, skipped
+
+
+def mapping_diff(old: dict, new: dict, menu: dict) -> list[str]:
+    """What changed, in plain words, worked out from the two mappings (not from what the model says it did)."""
+    lines = []
+    targets = list(PAD_AXES) + list(PAD_TRIGGERS) + list(PAD_BUTTONS)
+    for t in targets:
+        a, b = _binding_text(old, t, menu), _binding_text(new, t, menu)
+        if a != b:
+            lines.append(f"{t}: {a} → {b}")
+    for name, g in (new.get("gestures") or {}).items():
+        before = (old.get("gestures") or {}).get(name) or {}
+        for key, word in (("on", "sensitivity"), ("min_hold_ms", "hold time")):
+            if key in g and before.get(key) not in (None, g[key]) and name in (old.get("gestures") or {}):
+                label = (menu.get(name) or {}).get("label", name)
+                lines.append(f"{label} {word}: {before.get(key)} → {g[key]}")
+    lx_old = next((a for a in old.get("axes") or [] if a.get("target") == "lx"), {})
+    lx_new = next((a for a in new.get("axes") or [] if a.get("target") == "lx"), {})
+    for key, word in (("gain", "steering sensitivity"), ("deadzone", "steering dead zone"), ("curve", "steering curve"),
+                      ("invert", "steering inverted")):
+        if lx_old and lx_new and lx_old.get(key, 1.0 if key == "gain" else None) != lx_new.get(key, 1.0 if key == "gain" else None):
+            lines.append(f"{word}: {lx_old.get(key, 1.0 if key == 'gain' else '-')} → {lx_new.get(key)}")
+    if (old.get("pause") or {}) != (new.get("pause") or {}):
+        lines.append(f"pause: {(old.get('pause') or {}).get('gesture')} → {(new.get('pause') or {}).get('gesture')}")
+    return lines
+
+
+def _captain_errors(m: dict, calib: Calibration, learned: list[str], has_breath: bool) -> list[str]:
+    """Structural checks only: the player may choose a weak expression or leave a button empty on purpose."""
+    from helm.mapping import Mapper
+    errors = profiles.validate_mapping(m, dataclasses.replace(calib, reliable=list(BLENDSHAPE_NAMES)), learned, has_breath)
+    if not errors:
+        try:
+            Mapper(m)
+        except (ValueError, TypeError, AttributeError) as e:
+            errors = [f"{type(e).__name__}: {e}"]
+    return errors
+
+
+def _captain_prompt(request: str, mapping: dict, calib: Calibration, learned: list[str], has_breath: bool,
+                    game: str, stats: dict | None, menu: dict) -> str:
+    controls = game_controls(game)
+    known = "error" not in controls
+    report = player_report(calib, learned, has_breath, stats)
+    lines = [f"Player request: {request}", "", f"Game: {game}"]
+    if known:
+        lines += ["Its controls (target, action, held or tapped, how often):"]
+        lines += [f"- {a.get('target')}: {a.get('name')} ({a.get('kind')}, {a.get('frequency')})"
+                  for a in controls.get("actions", []) if isinstance(a, dict)]
+    else:
+        lines.append("Helm has no table for this game: use what you know of its default Xbox controller layout.")
+    lines += ["", "Gestures this player can use (name: what they do; usable or weak):"]
+    lines += [f"- {n}: {g['label']} ({'usable' if g.get('usable') else 'weak'}, {g['definition'].get('kind')})"
+              for n, g in menu.items()]
+    head = report.get("head_range_degrees", {}).get("yaw", {})
+    lines += ["", f"Head turn for full steering: {head.get('negative')}° left, {head.get('positive')}° right "
+              f"(calibration: {calib.mode}). Breath sensor: {'connected' if has_breath else 'not connected'}."]
+    lines += ["", "Current mapping:"]
+    targets = list(PAD_AXES) + list(PAD_TRIGGERS) + list(PAD_BUTTONS)
+    lines += [f"- {t}: {_binding_text(mapping, t, menu)}" for t in targets if _binding_text(mapping, t, menu) != "nothing"]
+    lx = next((a for a in mapping.get("axes") or [] if a.get("target") == "lx"), None)
+    if lx:
+        lines.append(f"- steering: gain {lx.get('gain', 1.0)}, deadzone {lx.get('deadzone')}, curve {lx.get('curve')}, "
+                     f"invert {lx.get('invert', False)}")
+    for name, g in (mapping.get("gestures") or {}).items():
+        if "on" in g:
+            lines.append(f"- {name} thresholds: on {g['on']}, off {g.get('off')}, hold {g.get('min_hold_ms', config.TRIGGER_MIN_HOLD_MS)} ms")
+    pause = mapping.get("pause") or {}
+    if pause.get("gesture"):
+        lines.append(f"- pause: {pause['gesture']} held {pause.get('hold_ms')} ms")
+    if stats and stats.get("gestures"):
+        lines += ["", f"This session ({stats.get('active_s', 0)} s of play), per gesture: fires, near-misses (almost "
+                      "fired), fires per minute:"]
+        lines += [f"- {n}: {s.get('fires')} fires, {s.get('near_misses')} near-misses, {s.get('fires_per_min')}/min"
+                  for n, s in stats["gestures"].items()]
+        for notice in stats.get("notices") or []:
+            lines.append(f"- note: {notice}")
+    return "\n".join(lines)
+
+
+def _call_claude(exe: str, prompt: str, web: bool, timeout_s: float) -> dict:
+    """One Claude Code call on the user's login. Returns the structured output or raises RuntimeError."""
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    model = os.environ.get("HELM_COACH_CLAUDE_MODEL", config.CAPTAIN_MODEL)
+    cmd = [exe, "-p", "--output-format", "json", "--model", model, "--no-session-persistence", "--effort", os.environ.get("HELM_CAPTAIN_EFFORT", config.CAPTAIN_EFFORT),
+           "--strict-mcp-config", "--setting-sources", "", "--disable-slash-commands",
+           "--tools", "WebSearch,WebFetch" if web else "", "--system-prompt", CAPTAIN_SYSTEM,
+           "--json-schema", json.dumps(CAPTAIN_SCHEMA)]
+    if web:
+        cmd += ["--allowedTools", "WebSearch,WebFetch"]
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    try:
+        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", timeout=timeout_s,
+                              env=env, cwd=tempfile.gettempdir(), creationflags=flags)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"Claude took longer than {timeout_s:.0f} s")
+    try:
+        data = json.loads(proc.stdout or "{}")
+    except ValueError:
+        data = {}
+    out = data.get("structured_output") if isinstance(data, dict) else None
+    if data.get("is_error") or not isinstance(out, dict) or not isinstance(out.get("changes"), list):
+        text = f"{data.get('result') or ''} {proc.stderr or ''}".strip()
+        if "login" in text.lower() or "log in" in text.lower() or "/login" in text:
+            raise RuntimeError("Claude Code is not logged in (run `claude` once and log in)")
+        raise RuntimeError(f"Claude Code failed: {_short_reason(text) or 'no answer'}")
+    return out
+
+
+def ask_captain(request: str, mapping: dict, calib: Calibration, learned: list[str], has_breath: bool,
+                game: str, stats: dict | None = None, on_step=None, kind: str = "ask") -> dict:
+    """Ask the Captain to change the current mapping. Returns {"mapping", "changes": [{"change", "reason"}],
+    "summary", "backend": "claude"|"offline", "offline_reason", "elapsed_s"}. Never raises.
+    kind "build" (set me up for `game`) and "review" (this session) fall back to the offline coach without Claude."""
+    started = time.monotonic()
+    step = on_step or (lambda text: None)
+    menu = _gesture_menu(calib, learned, has_breath, game)
+    base = copy.deepcopy(mapping)
+    if kind == "build" and base.get("game") != game:  # another game: start from its defaults, keep steering settings
+        fresh = profiles.default_mapping(game)
+        lx = next((a for a in base.get("axes") or [] if a.get("target") == "lx"), None)
+        for a in fresh.get("axes") or []:
+            if lx and a.get("target") == "lx":
+                a.update({k: lx[k] for k in ("gain", "deadzone", "curve", "invert") if k in lx})
+        fresh["player"], fresh["game"] = calib.player, game
+        base = fresh
+
+    def result(m: dict, changes: list[dict], summary: str, backend: str, reason: str = "") -> dict:
+        elapsed = round(time.monotonic() - started, 1)
+        step(f"Done in {elapsed} s" if backend == "claude" else f"Captain offline: {reason}")
+        return {"mapping": m, "changes": changes, "summary": summary, "backend": backend, "offline_reason": reason,
+                "elapsed_s": elapsed, "rationale": [summary] if summary else []}
+
+    def offline(reason: str) -> dict:
+        if kind == "build":
+            m, lines = _offline(game, calib, learned, has_breath)
+            lx = next((a for a in mapping.get("axes") or [] if a.get("target") == "lx"), None)
+            for a in m.get("axes") or []:
+                if lx and a.get("target") == "lx":
+                    a.update({k: lx[k] for k in ("gain", "deadzone", "curve", "invert") if k in lx})
+            return result(m, [{"change": d, "reason": "offline coach"} for d in mapping_diff(mapping, m, menu)],
+                          "Built without the AI: the default layout filtered to your moves.", "offline", reason)
+        if kind == "review":
+            m, notes = offline_review(base, stats or {}, calib, learned, has_breath)
+            return result(m, [{"change": n, "reason": "offline coach"} for n in notes],
+                          "Reviewed without the AI: small threshold changes from your session.", "offline", reason)
+        return result(base, [], "", "offline", reason)
+
+    _load_env()
+    if (os.environ.get("HELM_COACH_BACKEND") or config.COACH_BACKEND).lower() == "offline":
+        return offline("the Captain is set to offline")
+    exe = find_claude()
+    if not exe:
+        return offline("Claude Code was not found (looked on PATH and in the usual install folders). Install it "
+                       "and run `claude` once to log in")
+    web = "error" in game_controls(game)
+    step(f"Reading {game}'s controls and your moves" if not web else f"Looking up {game}'s controls")
+    prompt = _captain_prompt(request, base, calib, learned, has_breath, game, stats, menu)
+    deadline = started + config.CAPTAIN_TIMEOUT_S * (2 if web else 1)
+    try:
+        step("Asking Claude")
+        try:
+            out = _call_claude(exe, prompt, web, min(deadline - time.monotonic(), config.CAPTAIN_TRY_S * (2 if web else 1)))
+        except RuntimeError as e:
+            if "longer than" not in str(e) or deadline - time.monotonic() < 8:
+                raise
+            step("Claude is slow right now; asking again")
+            out = _call_claude(exe, prompt, web, deadline - time.monotonic())
+        step(f"Claude proposed {len(out['changes'])} change{'s' if len(out['changes']) != 1 else ''}; checking them")
+        new, applied, skipped = apply_changes(base, out["changes"], menu)
+        errors = _captain_errors(new, calib, learned, has_breath)
+        if errors and deadline - time.monotonic() > 5:
+            step(f"Fixing {len(errors)} problem{'s' if len(errors) != 1 else ''}")
+            retry = (prompt + "\n\nYour previous changes:\n" + json.dumps(out["changes"]) + "\n\nApplied to the mapping "
+                     "they gave these errors; return a corrected list of changes:\n- " + "\n- ".join(errors))
+            out = _call_claude(exe, retry, web, deadline - time.monotonic())
+            new, applied, skipped = apply_changes(base, out["changes"], menu)
+            errors = _captain_errors(new, calib, learned, has_breath)
+        if errors:
+            raise RuntimeError("its changes still did not fit: " + errors[0])
+    except RuntimeError as e:
+        log.warning("captain: %s", e)
+        return offline(str(e))
+    new["player"], new["game"] = calib.player, game
+    changes = _explained_changes(mapping, base, applied, menu) + [{"change": "", "reason": s} for s in skipped]
+    return result(new, changes, str(out.get("summary", "")), "claude")
+
+
+def _explained_changes(original: dict, base: dict, applied: list[dict], menu: dict) -> list[dict]:
+    """Each applied change's effect (worked out from the mappings) with its own reason. Effects of starting from
+    another game's defaults come first, without a reason of their own."""
+    out = [{"change": d, "reason": "the new game's default layout"} for d in mapping_diff(original, base, menu)]
+    current = base
+    for c in applied:
+        nxt, _, _ = apply_changes(current, [c], menu)
+        lines = mapping_diff(current, nxt, menu)
+        out += [{"change": d, "reason": str(c.get("reason", "")) if i == 0 else ""} for i, d in enumerate(lines)]
+        current = nxt
+    return out
