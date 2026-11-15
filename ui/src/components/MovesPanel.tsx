@@ -1,12 +1,13 @@
 // OWNER: P4
 // The moves column: one taped-down card per move with its face icon, mode, the button it presses in
 // big letters, a bar with a solid notch (fires) and a hollow notch (lets go), and the live value. A firing card
-// fills pink and says FIRING!. The last card is the "teach a new move" coupon. ControllerCard is the pad.
+// fills with its button's Xbox colour (A green, B red, X blue, Y yellow; pink for everything else, the same colour
+// the pad lights up) and says FIRING!. The last card is the "teach a new move" coupon. ControllerCard is the pad.
 import { TAKES_LABEL } from "../teach";
 import type { MoveRow } from "../moves";
 import { isBreath, keyText, moveName } from "../moves";
 import type { HelmState, Mapping } from "../types";
-import { ControllerView, usedInputs } from "./ControllerView";
+import { ControllerView, FACE_COLOURED, usedInputs } from "./ControllerView";
 import { FaceIcon } from "./PixelIcon";
 
 const TILTS = [-1.2, 0.9, -0.5, 1.3, -0.9, 0.6, -1.4, 1.0]; // pasted up by hand, the same way every time
@@ -36,7 +37,7 @@ function Card({ row, index }: { row: MoveRow; index: number }) {
   const label = `${what}.${row.firing ? " Firing now." : ""} ${row.measure} ${row.value}.`;
   return (
     <li
-      className={`move${row.firing ? " firing" : ""}${row.kind === "unmapped" ? " unmapped" : ""}`}
+      className={`move${row.firing ? " firing" : ""}${row.kind === "unmapped" ? " unmapped" : ""}${FACE_COLOURED.has(row.key) ? ` hl-${row.key}` : ""}`}
       style={{ ["--tilt" as string]: `${TILTS[index % TILTS.length]}deg` }}
       role="listitem"
       aria-label={label}
@@ -126,9 +127,7 @@ export function ControllerCard({ state, mapping }: { state: HelmState; mapping: 
   const pressed = state.control.buttons.filter((b) => used.has(b));
   const lx = state.control.lx;
   const steer = Math.abs(lx) < 0.05 ? "centre" : `${lx < 0 ? "left" : "right"} ${Math.round(Math.abs(lx) * 100)}%`;
-  const legend = (mapping?.buttons ?? [])
-    .filter((b) => used.has(b.target) && !/_(puff|sip)$/.test(b.gesture))
-    .map((b) => `${keyText(b.target)} ${moveName(b.gesture, state.catalog).toLowerCase()}`);
+  const legend = (mapping?.buttons ?? []).filter((b) => used.has(b.target) && !/_(puff|sip)$/.test(b.gesture));
   return (
     <>
       <div className="card-head">
@@ -141,7 +140,15 @@ export function ControllerCard({ state, mapping }: { state: HelmState; mapping: 
       <p className="pad-line">
         <b>Steering:</b> {steer} · <b>Throttle:</b> {Math.round(state.control.rt * 100)}%
       </p>
-      {legend.length > 0 && <p className="pad-legend">{legend.join(" · ")}</p>}
+      {legend.length > 0 && (
+        <ul className="pad-legend">
+          {legend.map((b) => (
+            <li key={`${b.gesture}-${b.target}`} className={FACE_COLOURED.has(b.target) ? `hl-${b.target}` : ""}>
+              <span className="legend-key">{keyText(b.target)}</span> {moveName(b.gesture, state.catalog).toLowerCase()}
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

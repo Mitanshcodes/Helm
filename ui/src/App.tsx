@@ -29,6 +29,7 @@ import { ProfilePicker } from "./components/ProfilePicker";
 import { Anchor, AnchorPanel, type AnchorPage, type TabId } from "./components/SetupTabs";
 import { TopBar } from "./components/StatusBar";
 import { SteeringCard } from "./components/SteeringCard";
+import { Fleet } from "./components/Fleet";
 import { TeachPanel } from "./components/TeachPanel";
 import { Wizard } from "./components/Wizard";
 
@@ -366,9 +367,12 @@ export default function App() {
             send({ cmd: "calibrate", mode: QUICK ? "quick" : "full" });
           }}
         />
-        <section className="camera-row" aria-label="Camera">
-          <CameraView frame={frame} state={state} size="hero" />
-        </section>
+        <div className="camera-row">
+          <Fleet />
+          <section aria-label="Camera">
+            <CameraView frame={frame} state={state} size="hero" />
+          </section>
+        </div>
         <div className="play-row">
           <section className="moves-col" aria-label="Your moves">
             <MovesPanel state={state} rows={rows} onTeach={openTeach} teachBusy={busy} />
