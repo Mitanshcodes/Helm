@@ -17,7 +17,7 @@ export interface Progress {
 export interface Mapping {
   player?: string;
   game?: string;
-  axes?: { source: string; target: string; deadzone?: number; curve?: number; invert?: boolean }[];
+  axes?: { source: string; target: string; deadzone?: number; curve?: number; invert?: boolean; gain?: number }[];
   triggers?: { source: string; target: string; lo?: number; hi?: number }[];
   gestures?: Record<string, { kind: string; sources?: string[]; combine?: string; on?: number; off?: number; min_hold_ms?: number }>;
   buttons?: { gesture: string; target: string; mode: string }[];
@@ -40,6 +40,7 @@ export interface HelmState {
   axes: Record<Axis, number>;
   breath: number; // -1..1 of the player's measured range: + puff, - sip
   breath_marks?: { soft: number; hard: number }; // where a breath counts as soft and as hard
+  ranges?: Record<Axis, [number, number]>; // degrees of head movement for full lock each way, sensitivity included
   activations: Record<string, number>;
   thresholds: Record<string, { on: number; off: number }>;
   control: { lx: number; ly: number; rx: number; ry: number; lt: number; rt: number; buttons: string[] };

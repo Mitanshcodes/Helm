@@ -2,7 +2,7 @@
 // The dashboard, printed like a riso zine page (docs/SPEC.md section 9). ?overlay=1 is the small window beside
 // the game; ?quick=1 makes calibration a quick one; ?mock=1 runs with no backend.
 //
-//   intro -> "who's at the helm?" (profile picker) -> dashboard
+//   intro -> "who's at the helm?" (profile picker: Default, saved players, New profile) -> dashboard
 //
 // The dashboard, top to bottom: the wordmark and Recalibrate; the camera; the move cards beside the controller
 // (so a fired move and the pressed button are seen together); the Anchor (every setting behind five buttons);
@@ -14,7 +14,7 @@ import { MOCK, fetchProfiles, useHelmSocket } from "./useHelmSocket";
 import { useFireClicks, useSetting, useSpokenPrompts } from "./feedback";
 import { HoldClock, buildRows } from "./moves";
 import { spokenTake, useTeachFlow } from "./teach";
-import { JUDGE, ProfileCard } from "./components/ProfileCard";
+import { ProfileCard } from "./components/ProfileCard";
 import { CalibrationCard, CalibrationDone, cameraHint, useCalibrationTrack, type CalMode, type BreathResult } from "./components/CalibrationCard";
 import { DevControls } from "./components/DevControls";
 import { CameraView, StatStamps } from "./components/CameraView";
@@ -28,6 +28,7 @@ import { OptionsBar, useOptions } from "./components/OptionsBar";
 import { ProfilePicker } from "./components/ProfilePicker";
 import { Anchor, AnchorPanel, type AnchorPage, type TabId } from "./components/SetupTabs";
 import { TopBar } from "./components/StatusBar";
+import { SteeringCard } from "./components/SteeringCard";
 import { TeachPanel } from "./components/TeachPanel";
 import { Wizard } from "./components/Wizard";
 
@@ -84,7 +85,7 @@ export default function App() {
       setBreathResult(null);
       setDoneAt(performance.now());
       // Right after a full calibration is when almost everyone wants their own move: offer it in place.
-      offerTeach.current = data.mode === "full" && playerRef.current !== JUDGE;
+      offerTeach.current = data.mode === "full";
       return;
     }
     if (msg.name === "coach_result") {
@@ -95,13 +96,7 @@ export default function App() {
       const player = String(data.player);
       if (loading.current === player) {
         loading.current = null;
-        setLoadedFor(player);
-        if (player === JUDGE) {
-          // A judge gets the 15-second setup straight away: resting face only.
-          autoSent.current = true;
-          calMode.current = "quick";
-          sendRef.current({ cmd: "calibrate", mode: "quick" });
-        }
+        setLoadedFor(player); // an uncalibrated profile now starts its full setup once a face is steady
       }
       setApplied(null);
       setCoach(null);
@@ -380,9 +375,12 @@ export default function App() {
             <MovesPanel state={state} rows={rows} onTeach={openTeach} teachBusy={busy} />
             <MessageBox state={state} mapping={mapping} doneAt={doneAt} hold={(mapping?.pause?.hold_ms ?? 2000) / 1000} />
           </section>
-          <section className="paper-card controller-card" aria-label="The controller">
-            <ControllerCard state={state} mapping={mapping} />
-          </section>
+          <div className="pad-col">
+            <section className="paper-card controller-card" aria-label="The controller">
+              <ControllerCard state={state} mapping={mapping} />
+            </section>
+            <SteeringCard state={state} mapping={mapping} apply={applyMapping} send={send} />
+          </div>
         </div>
         <Anchor pages={pages} open={setPanel} />
         <div className="foot-row">

@@ -269,12 +269,12 @@ def _offline(game: str, calib: Calibration, learned: list[str], has_breath: bool
 
 
 # Face expressions gestures are built from, in default preference order: name, blendshapes (read as their max),
-# on, off, plain words. Left and right smiles are one gesture: tracking cannot tell them apart reliably.
+# on, off, plain words. Left and right smiles are one gesture: tracking cannot tell them apart reliably. Pucker was
+# dropped for cheek puff (the user found puckering awkward); a mapping that still names it keeps working.
 _EXPRESSIONS = (
     ("brow_raise", ("browInnerUp",), 0.6, 0.4, "eyebrow raise"),
     ("smile", ("mouthSmileLeft", "mouthSmileRight"), 0.6, 0.4, "smile"),
     ("jaw_open", ("jawOpen",), 0.7, 0.45, "mouth open wide"),
-    ("pucker", ("mouthPucker",), 0.6, 0.4, "pucker your lips"),
     ("cheek_puff", ("cheekPuff",), 0.6, 0.4, "puff your cheeks"),
 )
 

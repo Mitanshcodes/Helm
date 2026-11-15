@@ -68,7 +68,17 @@ class Normalizer:
         self._excursions = {(a, side): deque(maxlen=config.AUTO_RANGE_SAMPLES) for a in AXES for side in (0, 1)}
         self._last_t: float | None = None
         self._calib: Calibration | None = None
+        self.gain = {a: 1.0 for a in AXES}             # steering sensitivity per head axis, from the mapping
         self.set_calibration(calib)
+
+    def set_gains(self, gains: dict[str, float]) -> None:
+        """Sensitivity per head axis: the calibrated range is divided by it, so 2.0 reaches full lock at half the
+        turn and 0.5 needs twice the turn. Clamped to STEER_GAIN_MIN..MAX; axes not named go back to 1.0."""
+        self.gain = {a: min(max(float(gains.get(a, 1.0)), config.STEER_GAIN_MIN), config.STEER_GAIN_MAX) for a in AXES}
+
+    def effective_range(self) -> dict[str, tuple[float, float]]:
+        """Degrees of head movement that give full lock each way, sensitivity included."""
+        return {a: (self.range[a][0] / self.gain[a], self.range[a][1] / self.gain[a]) for a in AXES}
 
     def set_calibration(self, calib: Calibration | None) -> None:
         r = config.DEFAULT_RANGE_DEG
@@ -113,7 +123,7 @@ class Normalizer:
             side = 1 if d >= 0.0 else 0
             if self._auto_range:
                 self._widen(a, side, abs(d))
-            u = d / self.range[a][side]
+            u = d * self.gain[a] / self.range[a][side]
             axes[a] = _clamp(self._filters[a](u, t_s))
             if idle and dt > 0.0:
                 self._drift(a, raw[a], dt)

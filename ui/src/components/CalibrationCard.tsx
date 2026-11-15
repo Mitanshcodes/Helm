@@ -10,7 +10,7 @@ const EXPR_STEPS: [string, string, string[]][] = [
   ["brow_raise", "EYEBROWS", ["browInnerUp"]],
   ["jaw_open", "JAW", ["jawOpen"]],
   ["smile", "SMILE", ["mouthSmileLeft", "mouthSmileRight"]],
-  ["pucker", "PUCKER", ["mouthPucker"]],
+  ["cheek_puff", "CHEEKS", ["cheekPuff"]],
 ];
 export type CalMode = "full" | "quick" | "breath";
 export interface BreathResult {

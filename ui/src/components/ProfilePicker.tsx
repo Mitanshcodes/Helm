@@ -1,17 +1,17 @@
 // OWNER: P4
 // "Who's at the helm?": the profile screen after the intro, one taped-down tile per profile, like picking a
-// profile on a streaming service. Judge is the shared 15-second setup (nothing saved); Tester and every saved
-// player keep their calibration, mapping and moves; "New profile" makes one from a name.
+// profile on a streaming service. Default is the shared profile anyone can use (a fresh setup each time, nothing
+// kept); then every profile someone made here; then "New profile". Profiles that ship in the repo for the team
+// (demo, demo_webcam, judge, ...) are not shown.
 import { useEffect, useRef, useState } from "react";
 import { humanize } from "../format";
 import type { IconName } from "../moves";
-import { JUDGE } from "./ProfileCard";
+import { DEFAULT_PLAYER, JUDGE } from "./ProfileCard";
 import { FaceIcon, HelmWheel } from "./PixelIcon";
 
-export const TESTER = "tester";
-const HIDDEN = new Set(["guest", JUDGE, TESTER]); // judge and tester are always first; guest is the CLI default
+const HIDDEN = new Set([DEFAULT_PLAYER, JUDGE, "demo", "demo_webcam", "tester"]);
 const TONES = ["pink", "blue", "yellow", "navy"];
-const ICONS: IconName[] = ["smile", "brow", "jaw", "pucker", "cheek", "nod"];
+const ICONS: IconName[] = ["brow", "jaw", "cheek", "nod", "star"];
 const TILTS = [-2, 1.5, -1, 2, -1.5, 1];
 export const PROFILE_NAME = /^[A-Za-z0-9_-]{1,32}$/; // the server's rule: it becomes a folder name
 
@@ -27,9 +27,8 @@ function tiles(profiles: Record<string, string[]>): Tile[] {
     .filter((p) => !HIDDEN.has(p) && !p.startsWith("_"))
     .sort();
   return [
-    { id: JUDGE, label: "Judge", note: "15-second setup · nothing saved", icon: "star" },
-    { id: TESTER, label: "Tester", note: profiles[TESTER] ? "saved on this laptop" : "full setup, then saved", icon: "smile" },
-    ...saved.map((id, i) => ({ id, label: humanize(id), note: "saved on this laptop", icon: ICONS[(i + 2) % ICONS.length] })),
+    { id: DEFAULT_PLAYER, label: "Default", note: "anyone · fresh setup each time", icon: "smile" },
+    ...saved.map((id, i) => ({ id, label: humanize(id), note: "saved on this laptop", icon: ICONS[i % ICONS.length] })),
   ];
 }
 
@@ -40,7 +39,7 @@ export function ProfilePicker(props: { profiles: Record<string, string[]>; ready
   const first = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const name = raw.trim().toLowerCase().replace(/\s+/g, "_");
-  const valid = PROFILE_NAME.test(name) && name !== "guest";
+  const valid = PROFILE_NAME.test(name) && !HIDDEN.has(name);
   const list = tiles(profiles);
 
   useEffect(() => first.current?.focus(), []);
@@ -85,7 +84,9 @@ export function ProfilePicker(props: { profiles: Record<string, string[]>; ready
                 Your name
               </label>
               <input id="new-profile" ref={input} value={raw} onChange={(e) => setRaw(e.target.value)} maxLength={32} autoComplete="off" />
-              <span className="tile-note">{raw && !valid ? "Letters, numbers, - and _ only" : "A full setup runs first, about 40 s"}</span>
+              <span className="tile-note">
+                {raw && !PROFILE_NAME.test(name) ? "Letters, numbers, - and _ only" : raw && HIDDEN.has(name) ? "That name is taken" : "Setup runs first (about 40 s), then it's kept"}
+              </span>
               <div className="new-actions">
                 <button type="submit" className="btn primary small" disabled={!valid || !ready}>
                   Start
@@ -101,7 +102,7 @@ export function ProfilePicker(props: { profiles: Record<string, string[]>; ready
                 +
               </span>
               <span className="tile-name">New profile</span>
-              <span className="tile-note">for someone new</span>
+              <span className="tile-note">keeps your setup and moves</span>
             </button>
           )}
         </li>

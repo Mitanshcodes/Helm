@@ -1916,10 +1916,58 @@ input[type="range"] {
   padding-top: 18px;
 }
 
-.play-row .controller-card {
+.pad-col {
   position: sticky;
   top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
   margin-top: 18px;
+}
+
+/* ---------------------------------------------------------------- steering sensitivity (under the controller) */
+
+.steer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transform: rotate(-0.4deg);
+  box-shadow: 8px 8px 0 var(--pink);
+}
+
+.steer-range {
+  font-size: 19px;
+}
+
+.steer-range b {
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.steer-slider {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.steer-slider input[type="range"] {
+  width: 100%;
+  min-height: 36px;
+  accent-color: var(--blue);
+}
+
+.steer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .breath-row {
@@ -2378,7 +2426,7 @@ input[type="range"] {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .play-row .controller-card {
+  .pad-col {
     position: static;
   }
 
@@ -2387,6 +2435,7 @@ input[type="range"] {
   }
 }
 
+:root[data-contrast="high"] .steer-card,
 :root[data-contrast="high"] .anchor-btn,
 :root[data-contrast="high"] .picker-tiles > li,
 :root[data-contrast="high"] .avatar {

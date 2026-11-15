@@ -195,14 +195,14 @@ def test_deepagents_wiring_with_a_scripted_model(monkeypatch):
 
 def test_every_face_button_is_filled_with_the_best_spare_gesture():
     """Smiles failed the check: B (nitro, held) gets the learned move, X the strongest expression left."""
-    calib = full_calib(reliable=("browInnerUp", "jawOpen", "mouthPucker"))
-    calib.blend_peak = {"browInnerUp": 0.8, "jawOpen": 0.9, "mouthPucker": 0.5}
+    calib = full_calib(reliable=("browInnerUp", "jawOpen", "cheekPuff"))
+    calib.blend_peak = {"browInnerUp": 0.8, "jawOpen": 0.9, "cheekPuff": 0.5}
     m = coach.offline_mapping("SuperTuxKart", calib, ["left_smirk"], False)
     by_target = {b["target"]: b for b in m["buttons"]}
     assert set(by_target) == {"A", "B", "X", "Y"}
     assert by_target["A"]["gesture"] == "brow_raise" and by_target["Y"]["gesture"] == "jaw_open"   # layout kept
     assert by_target["B"] == {"gesture": "left_smirk", "target": "B", "mode": "hold"}
-    assert by_target["X"]["gesture"] == "pucker" and by_target["X"]["mode"] == "tap"
+    assert by_target["X"]["gesture"] == "cheek_puff" and by_target["X"]["mode"] == "tap"
     assert len({b["gesture"] for b in m["buttons"]}) == 4
     assert coach.check(m, calib, ["left_smirk"], False) == []
 
@@ -230,7 +230,7 @@ def test_review_fills_an_empty_button_instead_of_rebuilding():
 def test_player_report_lists_usable_gestures_for_the_agent():
     report = coach.player_report(default_calibration("guest", mode="quick"), ["left_smirk"], False)
     names = [g["name"] for g in report["usable_gestures"]]
-    assert names[0] == "left_smirk" and {"brow_raise", "smile", "jaw_open", "pucker"} <= set(names)
+    assert names[0] == "left_smirk" and {"brow_raise", "smile", "jaw_open", "cheek_puff"} <= set(names)
 
 
 class FakeClaude:

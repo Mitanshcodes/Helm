@@ -137,3 +137,20 @@ def test_drift_is_bounded():
     for i in range(30 * 600):                                 # ten idle minutes far off neutral
         n.update(frame(i, yaw=40.0), idle=True)
     assert n.neutral["yaw"] == pytest.approx(config.DRIFT_MAX_FRACTION * config.DEFAULT_RANGE_DEG)
+
+
+def test_steering_gain_scales_the_calibrated_range():
+    from helm.calibration import default_calibration
+    from helm.contracts import FrameFeatures
+    c = default_calibration("sam", mode="full")
+    c.range = {"yaw": (20.0, 20.0), "pitch": (10.0, 10.0), "roll": (10.0, 10.0)}
+    n = Normalizer(c)
+    n.set_gains({"yaw": 2.0})
+    assert n.effective_range()["yaw"] == (10.0, 10.0) and n.effective_range()["pitch"] == (10.0, 10.0)
+    for i in range(30):                                          # hold 5 degrees right: half the calibrated range
+        s = n.update(FrameFeatures(seq=i, t_capture_ns=i * 33_000_000, t_infer_ns=i * 33_000_000, face=True, yaw=5.0))
+    assert s.axes["yaw"] == pytest.approx(0.5, abs=0.02)         # gain 2: half lock, not a quarter
+    n.set_gains({"yaw": 99.0})
+    assert n.gain["yaw"] == config.STEER_GAIN_MAX
+    n.set_gains({})
+    assert n.gain["yaw"] == 1.0

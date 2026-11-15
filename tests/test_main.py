@@ -12,7 +12,7 @@ from helm.main import Runtime, parse_args
 from helm.profiles import default_mapping
 
 STATE_KEYS = {"type", "fps", "latency_ms", "face", "paused", "breath_connected", "profile", "raw", "axes",
-              "breath", "activations", "thresholds", "control", "fired", "progress", "gestures", "notices", "mapping", "expressions", "catalog", "dev", "breath_marks"}
+              "breath", "activations", "thresholds", "control", "fired", "progress", "gestures", "notices", "mapping", "expressions", "catalog", "dev", "breath_marks", "ranges"}
 
 
 def _run(runtime: Runtime, until, timeout: float = 3.0) -> None:
@@ -87,7 +87,7 @@ def test_hand_made_mapping_may_use_a_weak_expression():
     from helm.calibration import default_calibration
     rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
     rt._calib = default_calibration("guest", mode="full")       # full calibration: only the eyes passed
-    mapping = default_mapping("SuperTuxKart")                    # brow, smile, pucker, jaw: all "weak"
+    mapping = default_mapping("SuperTuxKart")                    # brow, smile, cheek puff, jaw: all "weak"
     assert profiles.validate_mapping(mapping, rt._calib, [], False)   # the strict check would refuse it
     assert rt.set_mapping(mapping) == []                         # but the player chose it by hand
 
@@ -151,7 +151,7 @@ def test_crosstalk_is_held_back_but_two_real_moves_pass():
 
 def test_runtime_competitors_are_the_mapped_gestures_except_pause():
     rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
-    assert set(rt._competitors) == {"brow_raise", "smile", "pucker", "jaw_open"}
+    assert set(rt._competitors) == {"brow_raise", "smile", "cheek_puff", "jaw_open"}
     assert rt._competitors["jaw_open"] == (0.7, frozenset({"jawOpen"}))
 
 
@@ -274,3 +274,15 @@ def test_hand_edited_breath_range_is_applied(monkeypatch, tmp_path):
     rt._check_profile_files(seen)
     assert rt._sip.scales == (600.0, 1200.0)
     assert [e["data"]["what"] for e in rt.pop_events()] == ["breath"]
+
+
+def test_steering_sensitivity_comes_from_the_mapping_and_is_published():
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
+    base = rt.snapshot()["ranges"]["yaw"]
+    mapping = default_mapping("SuperTuxKart")
+    mapping["axes"][0]["gain"] = 2.0
+    assert rt.set_mapping(mapping) == []
+    rt._handle_requests()
+    from helm.contracts import ControlState
+    rt._snapshot = rt._build_snapshot(None, None, {}, ControlState(), None)
+    assert rt.snapshot()["ranges"]["yaw"] == [pytest.approx(base[0] / 2, abs=0.1), pytest.approx(base[1] / 2, abs=0.1)]

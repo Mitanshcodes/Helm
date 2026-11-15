@@ -304,8 +304,8 @@ def calibrated_player():
         player="sam", mode="full", neutral={axis: 0.0 for axis in AXES},
         range={axis: (12.0, 12.0) for axis in AXES}, blend_neutral=[0.0] * N_BLEND,
         blend_peak={n: 0.7 for n in ("browInnerUp", "jawOpen", "mouthSmileLeft",
-                                     "mouthSmileRight", "mouthPucker")},
-        reliable=["browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight", "mouthPucker"])
+                                     "mouthSmileRight", "cheekPuff")},
+        reliable=["browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight", "cheekPuff"])
 
 
 def test_there_are_committed_profiles_to_check():

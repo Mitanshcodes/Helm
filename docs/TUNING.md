@@ -68,6 +68,7 @@ the dashboard shows the error and Helm keeps using the previous version. No rest
 | `sources` | Which MediaPipe scores make the gesture. | Names from `helm/contracts.py` `BLENDSHAPE_NAMES`. |
 | `combine` | With two sources: `max` = either one, `min` = both. | |
 | `mode` | `tap` = short press. `hold` = held as long as you hold the face. `toggle` = press on, press off. | Drift or accelerate: `hold`. |
+| `gain` | Steering sensitivity: your calibrated head range is divided by it (0.5 to 3). The "steering sensitivity" slider under the controller sets it. | Turning your head a lot to steer: 1.5 to 2. |
 | `deadzone` | Steering ignores head turns smaller than this share of your range. | Car wanders: 0.12. |
 | `curve` | Above 1, small turns steer gently and big turns still reach full lock. | Twitchy: 2.0 to 2.5. |
 | `invert` | Flips the steering direction. | |

@@ -16,6 +16,8 @@ ONE_EURO_BETA = 1.0                # raise if steering feels laggy. Spec's 0.01 
                                    # normalized axes it lagged a head turn ~270 ms in simulation, 1.0 lags ~1 frame
 ONE_EURO_D_CUTOFF = 1.0
 AXIS_DEADZONE = 0.08
+STEER_GAIN_MIN = 0.5               # steering sensitivity (mapping axis "gain"): 2 = full lock at half the
+STEER_GAIN_MAX = 3.0               # calibrated head turn, 0.5 = it takes twice the turn
 AXIS_GAMMA = 2.0                   # >1 = gentle near center, full lock still at the calibrated range
 DEFAULT_RANGE_DEG = 20.0           # per direction, when there is no calibration (and quick mode's start)
 MIN_RANGE_DEG = 8.0                # floor on a measured range: below this, tracking jitter alone moves the stick
@@ -48,7 +50,7 @@ RELIABLE_MIN_REACH = 0.8           # reliable only if the real move reaches this
 # Calibration never prompts for these, so they are trusted without a check: blinks drive the pause
 # gesture in every mapping, and quick mode also trusts the two expressions the judge profile uses.
 ASSUMED_RELIABLE = ("eyeBlinkLeft", "eyeBlinkRight")
-QUICK_ASSUMED_RELIABLE = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight", "mouthPucker")
+QUICK_ASSUMED_RELIABLE = ("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmileRight", "cheekPuff")
 
 FACE_LOST_MS = 200                 # pad goes neutral after this long without a face
 STATS_WINDOW = 60                  # frames in the rolling fps and latency medians

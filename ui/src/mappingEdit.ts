@@ -81,7 +81,19 @@ export function setAxis(m: Mapping, target: string, source: string, invert: bool
   const next = clone(m);
   const current = next.axes?.find((a) => a.target === target);
   next.axes = (next.axes ?? []).filter((a) => a.target !== target);
-  if (source) next.axes.push({ source, target, deadzone: current?.deadzone ?? 0.08, curve: current?.curve ?? 1.5, invert });
+  if (source) {
+    const axis: NonNullable<Mapping["axes"]>[number] = { source, target, deadzone: current?.deadzone ?? 0.08, curve: current?.curve ?? 1.5, invert };
+    if (current?.gain !== undefined) axis.gain = current.gain;
+    next.axes.push(axis);
+  }
+  return next;
+}
+
+/** Steering sensitivity on a stick axis: 2 = full lock at half the calibrated head turn, 0.5 = twice the turn. */
+export function setAxisGain(m: Mapping, target: string, gain: number): Mapping {
+  const next = clone(m);
+  const axis = next.axes?.find((a) => a.target === target);
+  if (axis) axis.gain = Math.round(gain * 100) / 100;
   return next;
 }
 

@@ -659,6 +659,11 @@ class Runtime:
         self._tracked = {b["gesture"] for b in self._mapping.get("buttons", []) if "gesture" in b}
         used = self._tracked | {t.get("source") for t in self._mapping.get("triggers", []) or []}
         pause = (self._mapping.get("pause") or {}).get("gesture")
+        gains: dict[str, float] = {}
+        for axis in self._mapping.get("axes", []) or []:
+            if isinstance(axis, dict) and axis.get("source") in AXES and isinstance(axis.get("gain"), (int, float)):
+                gains.setdefault(axis["source"], float(axis["gain"]))
+        self._normalizer.set_gains(gains)
         self._competitors = {
             name: (float(g["on"]), frozenset(g.get("sources", []) if g.get("kind") == "blendshape" else ()))
             for name, g in defs.items()
@@ -773,6 +778,7 @@ class Runtime:
             "axes": {a: float(s.axes[a]) if s else 0.0 for a in AXES},
             "breath": float(s.breath) if s else 0.0,
             "breath_marks": {"soft": config.BREATH_SOFT, "hard": config.BREATH_HARD},
+            "ranges": {a: [round(lo, 1), round(hi, 1)] for a, (lo, hi) in self._normalizer.effective_range().items()},
             "activations": {name: float(level) for name, level in act.items()},
             "thresholds": self._thresholds,
             "control": {"lx": out.lx, "ly": out.ly, "rx": out.rx, "ry": out.ry, "lt": out.lt, "rt": out.rt,
