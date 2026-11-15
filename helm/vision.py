@@ -76,10 +76,11 @@ class FaceTracker:
         if not self._names_checked:
             self._check_names(categories)
         yaw, pitch, roll = pose_from_matrix(result.facial_transformation_matrixes[0])
-        landmarks = np.array([(p.x, p.y) for p in result.face_landmarks[0]], np.float32)
+        landmarks3d = np.array([(p.x, p.y, p.z) for p in result.face_landmarks[0]], np.float32)
+        landmarks = landmarks3d[:, :2].copy()
         return FrameFeatures(seq=seq, t_capture_ns=t_capture_ns, t_infer_ns=t_infer_ns, face=True,
                              yaw=yaw, pitch=pitch, roll=roll, blend=blend_from_categories(categories),
-                             landmarks=landmarks)
+                             landmarks=landmarks, landmarks3d=landmarks3d)
 
     def close(self) -> None:
         self._landmarker.close()

@@ -43,7 +43,9 @@ class DevRecording:
         self._context = dict(schema=1, kind=kind, player=player, game=game, started_utc=stamp,
                              video='video.avi', signals='signals.jsonl', video_fps=fps,
                              video_mirrored=False, timing='signals timestamps are authoritative; frame_index maps to video index',
-                             source=source, label=label)
+                             source=source, label=label,
+                             geometry_schema='mediapipe_normalized_xyz_v1',
+                             geometry_field='frame.landmarks3d')
         self._thread = threading.Thread(target=self._run, args=(calibration, model, mapping), daemon=False)
         self._thread.start()
 
