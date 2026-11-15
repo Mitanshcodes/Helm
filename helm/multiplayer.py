@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 
-from helm import profiles
+from helm import config, profiles
 from helm.adapt import FatigueTracker
 from helm.contracts import ControlState, FrameFeatures
 from helm.filters import Normalizer
@@ -35,6 +35,56 @@ class FaceGallery:
         return {index: players[0] for index, players in matches.items() if len(players) == 1}
 
 
+def _box(landmarks):
+    p = np.asarray(landmarks, np.float32)
+    return float(p[:, 0].min()), float(p[:, 1].min()), float(p[:, 0].max()), float(p[:, 1].max())
+
+
+def _iou(a, b):
+    w = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    h = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = w * h
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+class FaceTrack:
+    """One face followed across frames by position. `player` is who the last identity check said it is."""
+    __slots__ = ('box', 'player', 'verified_t')
+
+    def __init__(self, box):
+        self.box, self.player, self.verified_t = box, None, 0.0
+
+    def owner(self, now):
+        """The verified player, while the last check is fresh enough."""
+        return self.player if self.player and now - self.verified_t <= config.IDENTITY_HOLD_S else None
+
+
+class FaceTracks:
+    """Matches each frame's faces to the faces of the frame before by overlap (greedy, best first). A face that
+    overlaps no track starts a new, unverified one; tracks with no face this frame end."""
+    def __init__(self):
+        self.tracks: list[FaceTrack] = []
+
+    def match(self, boxes):
+        pairs = sorted(((_iou(b, t.box), i, j) for i, b in enumerate(boxes) for j, t in enumerate(self.tracks)),
+                       reverse=True)
+        chosen, used_faces, used_tracks = {}, set(), set()
+        for overlap, i, j in pairs:
+            if overlap < config.IDENTITY_FOLLOW_IOU or i in used_faces or j in used_tracks:
+                continue
+            chosen[i] = self.tracks[j]
+            used_faces.add(i)
+            used_tracks.add(j)
+        out = []
+        for i, b in enumerate(boxes):
+            track = chosen.get(i) or FaceTrack(b)
+            track.box = b
+            out.append(track)
+        self.tracks = out
+        return out
+
+
 @dataclass
 class MultiFrame:
     image: np.ndarray
@@ -56,6 +106,12 @@ class MultiFaceWorker:
         self._latest = None
         self._error = None
         self._thread = None
+        self._tracks_lock = threading.Lock()
+        self._tracks = FaceTracks()
+        self._tracks_generation = -1
+        self._pending = None                       # the newest frame for the identity thread
+        self._templates = {}
+        self._identity_error = None
 
     def configure(self, enabled):
         with self._condition:
@@ -93,12 +149,14 @@ class MultiFaceWorker:
                 self._condition.notify_all()
 
     def _run(self):
+        """Every frame: MediaPipe (up to 4 faces), faces matched to tracks by overlap, each labelled with its track's
+        verified player. Face recognition (SFace) runs beside this on its own thread (`_identify_loop`), so the frame
+        rate does not depend on how many faces are in view."""
         from helm.vision import FaceTracker
-        tracker = encoder = gallery = None
-        generation = -1
-        signature = None
+        tracker = None
         last_seq = -1
-        checked_at = 0.0
+        identify = threading.Thread(target=self._identify_loop, name='multiplayer-identity', daemon=True)
+        identify.start()
         try:
             while not self._stop.is_set():
                 with self._condition:
@@ -109,43 +167,111 @@ class MultiFaceWorker:
                 if not enabled:
                     continue
                 try:
-                    now = time.monotonic()
-                    if current != generation or now - checked_at > 1:
-                        checked_at = now
-                        updated = gallery_signature()
-                        if current != generation or updated != signature or gallery is None:
-                            generation, signature = current, updated
-                            templates = [load_template(identity_path(p.name), p.name)
-                                         for p in sorted(profiles._ROOT.iterdir())
-                                         if p.is_dir() and not p.name.startswith('_')
-                                         and p.name not in profiles.SHARED_PLAYERS
-                                         and (p / 'identity.json').exists()]
-                            gallery = FaceGallery(templates)
-                            encoder = encoder or SFace()
-                            tracker = tracker or FaceTracker(num_faces=4)
+                    tracker = tracker or FaceTracker(num_faces=4)
                     got = self.camera.wait_latest(last_seq, timeout=.1)
                     if got is None:
                         continue
                     image, capture_ns, last_seq = got
                     faces = tracker.process_all(image, capture_ns, last_seq)
-                    embeddings = []
-                    for face in faces:
-                        try:
-                            embeddings.append(encoder.embed(image, face))
-                        except ValueError:
-                            embeddings.append(None)
-                    matches = gallery.identify(embeddings, capture_ns / 1e9)
+                    now = time.monotonic()
+                    with self._tracks_lock:
+                        if self._tracks_generation != current:
+                            self._tracks, self._tracks_generation = FaceTracks(), current
+                        tracks = self._tracks.match([_box(f.landmarks) for f in faces])
+                        owners = [t.owner(now) for t in tracks]
+                        self._pending = (image, faces, tracks, capture_ns, current)
+                    seen, matches = set(), {}
+                    for index, player in enumerate(owners):  # one player, one face: a duplicate claim drops both
+                        if player is None:
+                            continue
+                        if player in seen:
+                            matches = {k: v for k, v in matches.items() if v != player}
+                        else:
+                            matches[index] = player
+                        seen.add(player)
                     infer_ns = time.perf_counter_ns()
                     for face in faces:
                         face.t_infer_ns = infer_ns
-                    self._publish(current, MultiFrame(image, faces, matches, current, last_seq, capture_ns))
+                    error = self._identity_error
+                    if error:
+                        self._publish(current, error=error)
+                    else:
+                        self._publish(current, MultiFrame(image, faces, matches, current, last_seq, capture_ns))
                 except Exception as e:
-                    gallery = None
-                    self._publish(current, error=f'Face recognition unavailable: {e}')
+                    self._publish(current, error=f'Face tracking unavailable: {e}')
                     self._stop.wait(.2)
         finally:
             if tracker:
                 tracker.close()
+
+    def _identify_loop(self):
+        """Beside the tracker, about 1/IDENTITY_CHECK_INTERVAL_S times a second: recognize the faces that need it.
+        A face with no player goes through the full gallery (with P3's temporal confirmation). A tracked face whose
+        last check is older than MULTI_REVERIFY_S gets one direct check against its own player's references (score
+        and margin over the other profiles); a failed check clears it. Faces verified recently are skipped, so a
+        round usually embeds zero or one face, not all of them."""
+        encoder = gallery = None
+        signature, generation = None, -1
+        while not self._stop.is_set():
+            started = time.monotonic()
+            try:
+                with self._tracks_lock:
+                    pending, self._pending = self._pending, None
+                if pending is None:
+                    self._stop.wait(.02)
+                    continue
+                image, faces, tracks, capture_ns, current = pending
+                updated = gallery_signature()
+                if gallery is None or updated != signature or current != generation:
+                    signature, generation = updated, current
+                    templates = [load_template(identity_path(p.name), p.name)
+                                 for p in sorted(profiles._ROOT.iterdir())
+                                 if p.is_dir() and not p.name.startswith('_')
+                                 and p.name not in profiles.SHARED_PLAYERS
+                                 and (p / 'identity.json').exists()]
+                    gallery = FaceGallery(templates)
+                    self._templates = {t.player: t for t in templates}
+                    encoder = encoder or SFace()
+                now = time.monotonic()
+                need = [t.player is None or now - t.verified_t > config.MULTI_REVERIFY_S for t in tracks]
+                if any(need):
+                    embeddings = []
+                    for face, check in zip(faces, need):
+                        try:
+                            embeddings.append(encoder.embed(image, face) if check else None)
+                        except ValueError:
+                            embeddings.append(None)
+                    new = [e if t.player is None else None for e, t in zip(embeddings, tracks)]
+                    matches = gallery.identify(new, capture_ns / 1e9) if any(e is not None for e in new) else {}
+                    with self._tracks_lock:
+                        for index, (track, emb) in enumerate(zip(tracks, embeddings)):
+                            if emb is None:
+                                continue
+                            if track.player is not None:             # re-check the player it already is
+                                if self._still(track.player, emb):
+                                    track.verified_t = time.monotonic()
+                                else:
+                                    track.player = None
+                            elif index in matches:
+                                for other in self._tracks.tracks:     # a player is on one face only
+                                    if other is not track and other.player == matches[index]:
+                                        other.player = None
+                                track.player, track.verified_t = matches[index], time.monotonic()
+                self._identity_error = None
+            except Exception as e:
+                gallery = None
+                self._identity_error = f'Face recognition unavailable: {e}'
+                self._stop.wait(.2)
+            self._stop.wait(max(0.0, config.IDENTITY_CHECK_INTERVAL_S - (time.monotonic() - started)))
+
+    def _still(self, player, embedding):
+        """A tracked face re-checked: still `player`, clearly ahead of every other profile?"""
+        target = self._templates.get(player)
+        if target is None:
+            return False
+        score = target.score(embedding)
+        others = max((t.score(embedding) for name, t in self._templates.items() if name != player), default=-1.0)
+        return score >= target.threshold and score - others >= target.margin
 
 
 class PlayerSession:

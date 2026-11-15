@@ -21,6 +21,21 @@ controllers. Switching modes clears assignments. If a player briefly leaves the 
 their assignment is retained and their output is neutral until their face is recognized
 again. The other controller continues operating.
 
+## Frame rate: tracking every frame, recognition beside it (P1, 2026-11-15)
+
+Running SFace on every face of every frame tied the frame rate to the number of faces in view: on the demo laptop
+5-6 fps with two people. Now `MultiFaceWorker`:
+
+- **Every frame:** runs MediaPipe (up to 4 faces) and matches each face to the face in the same place in the
+  previous frame (`FaceTracks`, overlap 0.3 or more). It labels each with its track's verified player.
+- **On its own thread, about 6-7 times a second:** recognizes only the faces that need it.
+  - A face with no player goes through the gallery, with the usual temporal confirmation.
+  - A tracked face whose last check is older than 0.5 s gets one direct check against its own player (score and
+    margin over the other profiles). A failed check clears it.
+- **Control stops** when a track's last confirmation is over 1 s old. A player is on one face only.
+- **Measured** with SFace slowed to laptop speed: one face 11.2 → 26.2 fps, two faces 5.8 → 26.5 fps (26 is the test
+  camera's maximum).
+
 ## Recognition and output
 
 One worker reads up to four faces from the same camera frame, computes SFace embeddings,

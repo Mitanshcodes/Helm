@@ -43,6 +43,7 @@ CALIB_MAX_DT_S = 0.1               # longest frame gap that counts toward a step
 # player looks while playing), plus a few from each head turn so steering does not lose recognition.
 IDENTITY_CHECK_INTERVAL_S = 0.15   # Face ID checks the camera about 6-7 times a second, beside the gesture tracker
 IDENTITY_HOLD_S = 1.0              # the verified face keeps control this long without a new "recognized" check
+MULTI_REVERIFY_S = 0.5             # multiplayer: a tracked face is re-checked once its last check is this old
 IDENTITY_FOLLOW_IOU = 0.3          # between checks, the tracked face must overlap the last verified face this much
 FACE_ID_NEUTRAL_SAMPLES = 12       # from the "relax your face" step...
 FACE_ID_NEUTRAL_INTERVAL_S = 0.2   # ...one this often (the step lasts about 3 s)

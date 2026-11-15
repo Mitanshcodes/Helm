@@ -189,3 +189,33 @@ def test_multiplayer_training_commands_require_opening_a_profile_first():
         assert rt._calibrator is None and rt._take_recorder is None
     finally:
         rt.stop()
+
+
+def test_tracks_follow_faces_by_overlap_and_verification_expires(monkeypatch):
+    from helm import config
+    from helm.multiplayer import FaceTracks
+    tracks = FaceTracks()
+    a, b = tracks.match([(.1, .1, .3, .3), (.6, .1, .8, .3)])
+    a.player, a.verified_t = 'alex', time.monotonic()
+    moved = tracks.match([(.62, .1, .82, .3), (.12, .1, .32, .3)])       # order swapped, both moved a little
+    assert moved[1] is a and moved[1].owner(time.monotonic()) == 'alex' and moved[0] is b and b.owner(time.monotonic()) is None
+    new = tracks.match([(.4, .5, .5, .6)])                               # alex left, a stranger elsewhere
+    assert new[0] is not a and new[0].player is None
+    a.verified_t = time.monotonic() - config.IDENTITY_HOLD_S - .1
+    assert a.owner(time.monotonic()) is None                             # no fresh check: no control
+
+
+def test_recheck_needs_score_and_margin_over_the_other_profiles():
+    from helm.multiplayer import MultiFaceWorker
+    w = MultiFaceWorker(camera=None)
+    w._templates = {'alex': Template('alex', np.array([embedding(0)])), 'sam': Template('sam', np.array([embedding(1)]))}
+    assert w._still('alex', embedding(0)) and not w._still('alex', embedding(1)) and not w._still('nobody', embedding(0))
+    both = (embedding(0) + embedding(1)) / np.sqrt(2)                    # looks like either: not clearly alex
+    assert not w._still('alex', both)
+
+
+def test_windows_throttling_opt_out_is_a_no_op_elsewhere():
+    import sys
+    from helm.main import exempt_from_throttling
+    if sys.platform != "win32":
+        assert exempt_from_throttling() is False

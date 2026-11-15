@@ -1457,9 +1457,39 @@ def ensure_dashboard(ui: Path = UI_DIR) -> bool:
     return True
 
 
+def exempt_from_throttling() -> bool:
+    """Windows 11 "power throttling" (EcoQoS) slows a process whose window is not in front: exactly Helm's case
+    while the game has focus. Opt this process out of execution-speed throttling and of the timer-resolution
+    throttling that comes with it, and ask for a 1 ms timer. Best effort; a no-op elsewhere. True if applied."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class PowerThrottlingState(ctypes.Structure):
+            _fields_ = [("Version", wintypes.ULONG), ("ControlMask", wintypes.ULONG), ("StateMask", wintypes.ULONG)]
+
+        process_power_throttling = 4               # PROCESS_INFORMATION_CLASS.ProcessPowerThrottling
+        execution_speed, ignore_timer_resolution = 0x1, 0x4
+        state = PowerThrottlingState(1, execution_speed | ignore_timer_resolution, 0)   # control both, enable neither
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        ok = kernel32.SetProcessInformation(kernel32.GetCurrentProcess(), process_power_throttling,
+                                            ctypes.byref(state), ctypes.sizeof(state))
+        ctypes.WinDLL("winmm").timeBeginPeriod(1)
+        if not ok:
+            log.warning("could not opt out of Windows power throttling (error %s)", ctypes.get_last_error())
+        return bool(ok)
+    except Exception as e:                         # never stop Helm over this
+        log.warning("could not opt out of Windows power throttling: %s", e)
+        return False
+
+
 def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    if exempt_from_throttling():
+        log.info("Windows power throttling is off for Helm (it keeps full speed while the game has focus)")
     if not args.no_server and not args.no_build:
         ensure_dashboard()
     runtime = Runtime(args)
