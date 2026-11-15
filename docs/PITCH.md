@@ -54,9 +54,10 @@ why it matters):
 
 | Claim | Status | How to say it |
 |---|---|---|
-| False triggers while talking | Measured, **n = 1** | "In our first test, Helm cut accidental presses roughly in half while the player talked: 11 a minute against 24 for a plain threshold." Say n = 1 if asked. If P2 runs two more people before submission, use those numbers. |
+| False triggers while talking | **Measured, n = 3, Windows laptop** | "While people read aloud, chatted and watched a video, Helm pressed something by accident 3 times a minute. A plain threshold: 67. That's 22 times fewer, a 95% cut for every person." |
+| Learned moves | Measured, n = 3 | "A move each person invented was recognized 80% of the time on tries the model had never seen; the nod, 100%." |
 | Software delay | Measured on the dev machine | "About 10 milliseconds from camera frame to controller inside Helm." Never call it end-to-end latency. |
-| Frame rate | Measured | "A steady 30 frames a second, even with Face ID on and two players." |
+| Frame rate | Measured | "30 frames a second on the Windows laptop, 7 milliseconds of face tracking per frame." |
 | Captain speed | Measured | "Plain-English changes in about 5 seconds." |
 | Calibration | Measured | "About a minute, no hands; a 2-second quick start for a new person." |
 | End-to-end latency, pointing throughput | **Not measured** | Do not mention. If asked: "That's the next measurement; the tools are built." |
@@ -80,7 +81,7 @@ hands resting in his lap, no exaggerated acting.
 | **0:42–0:55** | Screen recording: the profile screen ("who's at the helm?"). Mitansh picks New profile and types his name. | VO: "So we built Helm around one person: someone who can't use their hands. Everything it does, it does without them." |
 | **0:55–1:15** | Calibration, sped up 3×: the camera with the face mesh, prompts advancing by themselves (turn left, right, raise eyebrows, smile, nod), then the done card: "Nod up learned · on X", "Face ID on". | VO: "Helm uses the webcam you already own. In about a minute, with no hands, it learns how far you can move, which expressions work *for you*, and even trains its own model on a move you choose. It learns your face too, so only you control your profile." |
 | **1:15–1:40** | Split screen: Mitansh's face on one side, the game on the other. Head turns and the kart steers; eyebrows and an item fires; smile and nitro; nod and rescue. The controller graphic on the dashboard lights up in sync. | VO: "Head steers. Eyebrows fire. A smile is nitro. Helm appears to the computer as a real Xbox controller, so it works with any game, no changes." |
-| **1:40–1:50** | Mitansh talks and laughs at his friends while racing. A caption reads "talking: nothing fires". | VO: "And it knows the difference between a gesture and a conversation. Talk, laugh, trash-talk: nothing fires by accident." |
+| **1:40–1:50** | Mitansh talks and laughs at his friends while racing. A caption reads "talking: nothing fires", then the card **"22× fewer accidental presses"**. | VO: "And it knows the difference between a gesture and a conversation. While people talked, it pressed something by accident 22 times less often than a plain face tracker." |
 | **1:50–2:00** | Close-up on the straw: a sip brakes, a puff accelerates; the trigger bars fill on the dashboard. | VO: "Add a straw and a cheap pressure sensor, and breath becomes an analog brake and throttle." |
 | **2:00–2:12** | Screen: the Anchor, then the Captain. Type "steering needs too much head turning". The steps appear, then "steering sensitivity 1.0 → 2.0", then Apply. | VO: "Don't want to dig through settings? Just tell the Captain, our AI agent. It reads the game's controls and your abilities, and changes only what you asked, in seconds." |
 | **2:12–2:28** | Back in the room. Multiplayer: Mitansh and Friend B both on face control, each with their own controller (two pad graphics, each labeled with a name); the friends cheer; Mitansh crosses the finish line. | VO: "Face ID routes each player to their own controller. So he's not watching anymore. He's racing his friends." |
@@ -112,7 +113,7 @@ hand on the laptop only for the Captain step), **Backup** (watches the dashboard
 | **0:00–0:25 Problem** | "One in six people on Earth lives with a significant disability: 46 million gamers in the US alone. The controllers made for them cost $100 to $500, and almost all of them still need you to press something. If your hands don't work, game night means watching your friends play. We built Helm so that doesn't happen." | Driver already racing, hands visibly in lap. |
 | **0:25–0:40 The person** | "We designed it around one person who can't use their hands. Every part of it works without them: setup, playing, even changing settings." | Driver keeps racing. |
 | **0:40–1:20 Watch it** | "Mitansh is steering with his head: a small turn, because Helm learned *his* range. Eyebrows fire an item. A smile is nitro. And that nod? Helm trained its own model on *his* nod during setup; it's his rescue button. The game has no idea: Helm looks like a normal Xbox controller." | Driver: turn, eyebrows (item), smile (nitro), nod (rescue). Point at the controller graphic lighting up. |
-| **1:20–1:35 Talking does nothing** | "Mitansh, say hi." | Driver talks to the judges, laughs, keeps steering: nothing fires. Speaker: "It learned his everyday face, so talking never presses a button." |
+| **1:20–1:35 Talking does nothing** | "Mitansh, say hi." | Driver talks to the judges, laughs, keeps steering: nothing fires. Speaker: "It learned his everyday face. We measured it with three people: 3 accidental presses a minute while talking, against 67 for a plain face tracker. 22 times fewer." |
 | **1:35–1:50 Breath** | "Not everyone can move their face much either, so we built a sip-and-puff straw." | Driver sips (brake bar), puffs (throttle). |
 | **1:50–2:15 The Captain** | "Settings are a wall for someone who can't use a mouse well. So you just say it." Type into the Captain: **"steering needs too much head turning"**. "Our agent reads the game's controls and his abilities and changes only that, in about five seconds." Apply. | Show the steps, then "steering sensitivity → 2.0", then the Apply button. Driver: "Oh, way easier." |
 | **2:15–2:35 Only him** | "Helm knows who's playing." Backup leans into the camera next to Mitansh. "That's not Mitansh, so Helm ignores him completely. And in multiplayer, each person gets their own controller." | Backup's face in frame: no control change. (Optional: flip to the Multiplayer screen if it's set up.) |
@@ -130,8 +131,8 @@ say "it also works offline with a built-in coach."
   second. A webcam adds its own delay. A full end-to-end measurement against a real controller is next."
 - **"How do you stop accidental presses?"** "Four layers: each move is scaled to *your* range; it needs to be held
   past a threshold for a beat; when one expression causes another (a smile lifts the jaw) only the real one
-  fires; and your personal model learns your everyday face as 'nothing'. In our first test that halved
-  accidental presses while talking."
+  fires; and your personal model learns your everyday face as 'nothing'. With three people talking, reading
+  and watching video: 3 accidental presses a minute against 67, 95% fewer for every one of them."
 - **"What if someone can't move their head or face much?"** "Every input is optional and per person: breath
   alone works, small movements are scaled up, and you can teach any movement you *can* make in five tries."
 - **"Have you tested with people with disabilities?"** Be honest: "Not yet. We built it in 36 hours. Our next
@@ -156,9 +157,7 @@ say "it also works offline with a built-in coach."
 
 ## 5. Before submission (owner: whoever is free)
 
-1. **P2: two more false-trigger runs** (10 min, `eval/PROTOCOL.md` test 2), then `python eval/analysis.py`, then
-   paste the printed `falseTriggers` line into `ui/src/results.ts`. If there's no time, leave it out of the slides
-   and say it in words with n = 1.
+1. ~~Two more false-trigger runs~~ Done: n = 3 on Windows, 3.0 vs 67.4 a minute, in `ui/src/results.ts`.
 2. **Devpost** (`docs/devpost.md`): fill the TODOs from section 1 of this file, then add the video link.
 3. **Record the video now** using the shot list. Record the race take twice.
 4. **Demo laptop:**
