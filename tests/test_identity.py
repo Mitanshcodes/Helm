@@ -144,7 +144,7 @@ def test_rejection_immediately_neutralizes_auto_output_without_face_loss_grace(t
     rt.stop()
 
 
-@pytest.mark.parametrize('field', ['_calibrator', '_take_recorder', '_breath_cal'])
+@pytest.mark.parametrize('field', ['_calibrator', '_take_recorder'])
 def test_setup_collects_only_verified_samples_and_time_freezes_during_loss(tmp_path, monkeypatch, field):
     rt = runtime(tmp_path, monkeypatch)
     observed = []
@@ -240,4 +240,22 @@ def test_gestures_follow_the_verified_face_between_checks(tmp_path, monkeypatch)
     assert not rt._follow_verified(frame(.05))                # someone else, on the other side of the picture
     rt._verified_t = time.monotonic() - config.IDENTITY_HOLD_S - .1
     assert not rt._follow_verified(frame(.46))                # no fresh "recognized" check: control stops
+    rt.stop()
+
+
+def test_breath_calibration_keeps_going_while_the_face_is_not_recognized(tmp_path, monkeypatch):
+    """The breath steps read the sensor, not the face. With the tube in the mouth the player is often not recognized;
+    the steps used to freeze there forever while the sensor read fine."""
+    rt = runtime(tmp_path, monkeypatch)
+    times = []
+    def feed(t_s):
+        times.append(t_s)
+        return Progress(True, 'breath_sip', 'Sip hard', .5, .5)
+    rt._breath_cal = SimpleNamespace(feed=feed)
+    now = time.perf_counter()
+    step(rt, 0, now, False)                                 # not recognized
+    step(rt, 1, now + 1.0, False)
+    step(rt, 2, now + 2.0, True)
+    assert times == pytest.approx([now, now + 1.0, now + 2.0], abs=1e-6)   # real time, every frame
+    assert rt.snapshot()['progress']['step'] == 'breath_sip'
     rt.stop()

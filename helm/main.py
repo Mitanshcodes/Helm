@@ -782,22 +782,7 @@ class Runtime:
         if self._face_id is not None and self._calibrator is None and self._face_id.done:
             self._face_id_ended()
         if progress is None and self._breath_cal is not None:
-            progress = self._breath_cal.feed(enrollment_t_s)
-            if progress.done:
-                max_puff, max_sip = self._breath_cal.result()
-                notes = self._breath_cal.notes
-                self._breath_accepted = self._breath_cal.accepted
-                self._breath_cal = None
-                self._sip.calibrate(max_puff, max_sip)
-                # Only persist a real measurement. Writing the unchanged defaults would leave a
-                # breath.json that looks calibrated and, worse, would override a future retune of
-                # the config defaults with numbers nobody ever measured.
-                if self._breath_accepted:
-                    self._worker(profiles.save_breath, self.player, max_puff, max_sip)
-                self._event("breath_calibration_done",
-                            {"max_puff_mv": max_puff, "max_sip_mv": max_sip, "notes": notes,
-                             "saved": self._breath_accepted})
-                progress = None
+            progress = self._breath_step(t_s)
 
         s = self._normalizer.update(f, breath=self._sip.level, idle=self._last_idle)
 
@@ -929,15 +914,41 @@ class Runtime:
             self._reset_identity_controls()
         self._identity_admitted = admitted
 
+    def _breath_step(self, t_s: float) -> Progress | None:
+        """Advance the breath calibration on real time. It reads the sensor, not the face, so it never waits for
+        the face to be found or recognized: with the tube in their mouth a player is often not recognized (Face
+        ID) or not even detected, and the steps used to stall right there while the sensor read fine."""
+        progress = self._breath_cal.feed(t_s)
+        if progress.done:
+            max_puff, max_sip = self._breath_cal.result()
+            notes = self._breath_cal.notes
+            self._breath_accepted = self._breath_cal.accepted
+            self._breath_cal = None
+            self._sip.calibrate(max_puff, max_sip)
+            # Only persist a real measurement. Writing the unchanged defaults would leave a
+            # breath.json that looks calibrated and, worse, would override a future retune of
+            # the config defaults with numbers nobody ever measured.
+            if self._breath_accepted:
+                self._worker(profiles.save_breath, self.player, max_puff, max_sip)
+            self._event("breath_calibration_done",
+                        {"max_puff_mv": max_puff, "max_sip_mv": max_sip, "notes": notes,
+                         "saved": self._breath_accepted})
+            return None
+        return progress
+
     def _identity_blocked_step(self, f):
-        """No grace period, breath, auto throttle, calibration sample or enrollment timer on rejection."""
+        """No grace period, breath output, auto throttle, face sample or enrollment timer on rejection.
+        The breath calibration still advances: it does not depend on the face (see _breath_step)."""
         f = FrameFeatures(f.seq, f.t_capture_ns, f.t_infer_ns, False)
         s = Signals(f.seq, f.t_capture_ns, f.t_infer_ns, False,
                     {a: 0.0 for a in AXES}, np.zeros(52, np.float32), np.zeros(56, np.float32), 0.0)
         self._sip.poll()
         out = ControlState(t_output_ns=time.perf_counter_ns(), paused=getattr(self._mapper, '_paused', False))
         self._pad.apply(out)
-        progress = self._paused_identity_progress()
+        if self._breath_cal is not None and self._calibrator is None:
+            progress = self._breath_step(f.t_capture_ns / 1e9)
+        else:
+            progress = self._paused_identity_progress()
         self._publish_processed(f, s, {}, out, progress, True, time.perf_counter_ns())
 
     def _paused_identity_progress(self):
