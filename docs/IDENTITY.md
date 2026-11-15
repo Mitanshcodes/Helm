@@ -7,16 +7,15 @@ ungated for gesture studies; live protection is a separate asynchronous camera w
 
 ## In the app: Face ID during calibration
 
-A named profile's full calibration (onboarding a New profile, or Recalibrate) now starts with a **Face ID**
-step, so nobody has to stop Helm and run the command below:
+A named profile's full calibration (onboarding a New profile, or Recalibrate) learns the face as it goes, with
+no step of its own, so nobody has to stop Helm and run the command below:
 
-- **What it does:** `main.FaceEnrollment` samples the camera on a worker thread every 0.25 s. It keeps one SFace
-  reference per sample with exactly one face in view, stops at 16 samples (or after 12 s), and saves them with
-  `save_template`.
-- **What happens next:** the profile is then protected, and the rest of the calibration runs in the protected path,
-  as recommended below.
-- **When it fails:** with fewer than 8 clear samples (someone else in view, face too small) Face ID is skipped,
-  says why, and calibration carries on unprotected.
+- **When it samples:** only in the head-movement steps (resting face, turn left/right, chin up/down), never in the
+  expression steps.
+- **How:** `main.FaceEnrollment` takes one sample every 0.75 s until it has 16, keeping an SFace reference only
+  when exactly one face is in view.
+- **When the calibration ends:** it saves them with `save_template` (at least 8) and the profile is protected from
+  then on. With fewer clear samples it is skipped and the dashboard says why.
 - **When it doesn't run:** the shared Default/guest and judge profiles, mock/replay, and a laptop without the model.
   Run `python -m helm.identity download` once on the demo laptop.
 

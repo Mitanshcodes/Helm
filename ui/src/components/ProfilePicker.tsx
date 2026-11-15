@@ -85,7 +85,7 @@ export function ProfilePicker(props: { profiles: Record<string, string[]>; ready
               </label>
               <input id="new-profile" ref={input} value={raw} onChange={(e) => setRaw(e.target.value)} maxLength={32} autoComplete="off" />
               <span className="tile-note">
-                {raw && !PROFILE_NAME.test(name) ? "Letters, numbers, - and _ only" : raw && HIDDEN.has(name) ? "That name is taken" : "Face ID and setup run first (about a minute), then it's kept"}
+                {raw && !PROFILE_NAME.test(name) ? "Letters, numbers, - and _ only" : raw && HIDDEN.has(name) ? "That name is taken" : "Setup runs first (about 40 s) and learns your face, then it's kept"}
               </span>
               <div className="new-actions">
                 <button type="submit" className="btn primary small" disabled={!valid || !ready}>

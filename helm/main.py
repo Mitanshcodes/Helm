@@ -62,19 +62,25 @@ def hold_back_crosstalk(act: dict[str, float], competitors: dict[str, tuple[floa
     return out
 
 
+# Calibration steps where the player moves their head (not the expression steps): Face ID samples only these.
+FACE_ID_STEPS = ("neutral", "yaw_left", "yaw_right", "pitch_up", "pitch_down")
+
+
 class FaceEnrollment:
-    """Face ID, in the app: the first step of a named profile's full calibration (P3's `helm.identity` does the
-    recognition; this replaces its command-line `enroll` so nobody has to stop Helm). A worker thread samples the
-    camera every FACE_ID_INTERVAL_S, keeps one SFace reference per sample with exactly one face in view, and when it
-    has FACE_ID_SAMPLES (or FACE_ID_MAX_S passes) saves them with `identity.save_template`. The pipeline only reads
-    `status()`; nothing here runs on the pipeline thread."""
+    """Face ID, learned during an ordinary full calibration of a named profile, with no step of its own (P3's
+    `helm.identity` does the recognition; this replaces its command-line `enroll`). While the pipeline marks it
+    `active` (the head-movement steps, FACE_ID_STEPS), a worker thread takes one sample every FACE_ID_INTERVAL_S
+    until it has FACE_ID_SAMPLES, keeping an SFace reference only when exactly one face is in view. When the
+    calibration ends the pipeline calls finish(): with at least FACE_ID_MIN_SAMPLES it saves them with
+    `identity.save_template`. Nothing here runs on the pipeline thread."""
 
     def __init__(self, camera, player: str):
         self._camera, self.player = camera, player
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self._finish = threading.Event()
+        self.active = False                        # set by the pipeline: a head-movement step is running
         self._samples = 0
-        self._crowded = False
         self.done = False
         self.saved = False
         self.reason = ""
@@ -87,11 +93,16 @@ class FaceEnrollment:
     def cancel(self) -> None:
         self._stop.set()
 
-    def status(self) -> tuple[int, bool]:
-        with self._lock:
-            return self._samples, self._crowded
+    def finish(self) -> None:
+        """The calibration ended: stop sampling and save what was collected."""
+        self._finish.set()
 
-    def _finish(self, saved: bool, reason: str) -> None:
+    @property
+    def samples(self) -> int:
+        with self._lock:
+            return self._samples
+
+    def _done(self, saved: bool, reason: str) -> None:
         with self._lock:
             self.saved, self.reason, self.done = saved, reason, True
 
@@ -101,39 +112,36 @@ class FaceEnrollment:
         try:
             encoder = identity.SFace()
             tracker = FaceTracker(num_faces=4)     # to tell "just you" from "someone else is in view"
-            vectors, seq = [], -1
-            started = next_at = time.monotonic()
-            while (not self._stop.is_set() and len(vectors) < config.FACE_ID_SAMPLES
-                   and time.monotonic() - started < config.FACE_ID_MAX_S):
+            vectors, seq, next_at = [], -1, 0.0
+            while not self._stop.is_set() and not self._finish.is_set():
                 got = self._camera.wait_latest(seq, timeout=0.2)
-                if got is None or time.monotonic() < next_at:
-                    if got is not None:
-                        seq = got[2]
+                if got is None:
+                    continue
+                seq = got[2]
+                if not self.active or len(vectors) >= config.FACE_ID_SAMPLES or time.monotonic() < next_at:
                     continue
                 image, capture_ns, seq = got
                 next_at = time.monotonic() + config.FACE_ID_INTERVAL_S
                 faces = tracker.process_all(image, capture_ns, seq)
-                with self._lock:
-                    self._crowded = len(faces) > 1
-                if len(faces) != 1:
+                if len(faces) != 1:                # nobody, or someone else in view: not a reference
                     continue
                 try:
                     vectors.append(encoder.embed(image, faces[0]))
-                except ValueError:                 # too small or turned away: not a usable reference
+                except ValueError:                 # too small or turned too far: not a usable reference
                     continue
                 with self._lock:
                     self._samples = len(vectors)
             if self._stop.is_set():
-                return self._finish(False, "cancelled")
+                return self._done(False, "cancelled")
             if len(vectors) < config.FACE_ID_MIN_SAMPLES:
-                return self._finish(False, "Face ID needs one clear face in view; it was skipped")
+                return self._done(False, "Face ID needs one clear face in view while you turn your head; it was skipped")
             identity.save_template(self.player, vectors, provenance={"source": "calibration", "frames": len(vectors)})
-            self._finish(True, "")
+            self._done(True, "")
         except FileNotFoundError:
-            self._finish(False, "Face ID model is not downloaded on this laptop (python -m helm.identity download)")
+            self._done(False, "Face ID model is not downloaded on this laptop (python -m helm.identity download)")
         except Exception as e:                     # never take calibration down with it
             log.warning("face id enrollment failed: %s", e)
-            self._finish(False, f"Face ID was skipped: {e}")
+            self._done(False, f"Face ID was skipped: {e}")
         finally:
             if tracker:
                 tracker.close()
@@ -263,7 +271,7 @@ class Runtime:
         self._dev_end_after_frame = False
         self._video_frame = None
         self._identity_worker = IdentityWorker(self._camera) if self._camera else None
-        self._face_id: FaceEnrollment | None = None   # Face ID step running (start of a full calibration)
+        self._face_id: FaceEnrollment | None = None   # Face ID learning during a full calibration
         self._identity_generation = 0
         self._identity_last_seq = -1
         self._identity_frame_seq = -1
@@ -529,11 +537,13 @@ class Runtime:
         enrollment_t_s = self._identity_clock_s if self._identity_required else t_s
 
         progress: Progress | None = None
-        if self._face_id is not None:
-            progress = self._face_id_step()
-        elif self._calibrator is not None:
+        if self._calibrator is not None:
             progress = self._calibrator.feed(f, enrollment_t_s)
+            if self._face_id is not None:
+                self._face_id.active = f.face and progress.step in FACE_ID_STEPS
             if progress.done:
+                if self._face_id is not None:
+                    self._face_id.finish()
                 self._calib = self._calibrator.result()
                 if self._dev_session:
                     self._dev_session.calibration(self._calib)
@@ -555,7 +565,9 @@ class Runtime:
                 if self._sip.connected:
                     self._breath_cal = BreathCalibrator(self._sip)
                     progress = self._breath_cal.feed(enrollment_t_s)
-        elif self._breath_cal is not None:
+        if self._face_id is not None and self._calibrator is None and self._face_id.done:
+            self._face_id_ended()
+        if progress is None and self._breath_cal is not None:
             progress = self._breath_cal.feed(enrollment_t_s)
             if progress.done:
                 max_puff, max_sip = self._breath_cal.result()
@@ -597,7 +609,7 @@ class Runtime:
         # in this guard, the calibration sip slams the brake and the calibration puff latches the
         # throttle while they are doing it.
         neutral = (face_lost or self._calibrator is not None or self._breath_cal is not None
-                   or self._take_recorder is not None or self._face_id is not None or state.paused)
+                   or self._take_recorder is not None or state.paused)
         out = ControlState(t_output_ns=state.t_output_ns, paused=state.paused) if neutral else state
         self._pad.apply(out)
         t_output_ns = time.perf_counter_ns()
@@ -750,12 +762,10 @@ class Runtime:
         self._start_dev_capture('calibration')
         self._breath_cal = None
         self._cancel_face_id()
-        # Face ID first: a named profile's full calibration learns who the player is, then the rest runs protected.
-        if mode == "full" and self._face_id_possible():
-            self._calibrator = None
-            self._face_id = FaceEnrollment(self._camera, self.player).start()
-            return
         self._calibrator = Calibrator(self.player, mode)
+        # Face ID learns the player's face during this calibration's head-movement steps (named profiles only).
+        if mode == "full" and self._face_id_possible():
+            self._face_id = FaceEnrollment(self._camera, self.player).start()
 
     def _face_id_possible(self) -> bool:
         from helm import identity
@@ -767,25 +777,14 @@ class Runtime:
             self._face_id.cancel()
             self._face_id = None
 
-    def _face_id_step(self) -> Progress:
-        """Pipeline: progress of Face ID; when it ends, protect the profile (if saved) and start the calibration."""
-        enrollment = self._face_id
-        if enrollment.done:
-            self._face_id = None
-            self._event("face_id_done", {"saved": enrollment.saved, "reason": enrollment.reason})
-            if enrollment.saved:
-                self._configure_identity()         # from here on only this face controls the profile
-                self._reset_identity_controls()
-            self._calibrator = Calibrator(self.player, "full")
-            return Progress(active=True, step="neutral", prompt="Look at the screen and relax your face", progress=0.0,
-                            overall=0.0)
-        samples, crowded = enrollment.status()
-        half = samples < config.FACE_ID_SAMPLES // 2
-        prompt = ("Just you in view, please: someone else is in the picture" if crowded
-                  else "Look at the camera: Helm is learning who you are" if half
-                  else "Now turn your head a little to each side")
-        return Progress(active=True, step="face_id", prompt=prompt, progress=samples / config.FACE_ID_SAMPLES,
-                        overall=0.0)
+    def _face_id_ended(self) -> None:
+        """Pipeline, after the calibration: once Face ID has saved (or given up), protect the profile."""
+        enrollment, self._face_id = self._face_id, None
+        self._event("face_id_done", {"saved": enrollment.saved, "reason": enrollment.reason,
+                                     "samples": enrollment.samples})
+        if enrollment.saved:
+            self._configure_identity()             # from here on only this face controls the profile
+            self._reset_identity_controls()
 
     def _do_record(self, name: str | None) -> None:
         self._cancel_face_id()

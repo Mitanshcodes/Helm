@@ -63,7 +63,7 @@ export default function App() {
   const calMode = useRef<CalMode>(QUICK ? "quick" : "full"); // the running (or last) calibration
   const [breathResult, setBreathResult] = useState<BreathResult | null>(null);
   const [customResult, setCustomResult] = useState<CustomResult | null>(null); // the nod the calibration taught
-  const [faceId, setFaceId] = useState<FaceIdResult | null>(null); // Face ID at the start of this calibration
+  const [faceId, setFaceId] = useState<FaceIdResult | null>(null); // Face ID learned during this calibration
   const [profiles, setProfiles] = useState<Record<string, string[]>>({});
   const sendRef = useRef<(cmd: Command) => void>(() => {});
   const [voice, setVoice] = useSetting("voice");
@@ -132,7 +132,10 @@ export default function App() {
   const send = useCallback(
     (cmd: Command) => {
       if (cmd.cmd === "coach_build" || cmd.cmd === "coach_review") setCoachBusy(true);
-      if (cmd.cmd === "calibrate") calMode.current = cmd.mode;
+      if (cmd.cmd === "calibrate") {
+        calMode.current = cmd.mode;
+        setFaceId(null); // Face ID (named profiles) reports after this calibration's head-movement steps
+      }
       rawSend(cmd);
     },
     [rawSend],
@@ -250,7 +253,7 @@ export default function App() {
     );
   else if (state && showingDone)
     card = <CalibrationDone state={state} mode={calMode.current} track={track} breath={breathResult} custom={calMode.current === "full" ? customResult : null}
-      faceId={calMode.current === "full" && track.steps.includes("face_id") ? faceId : null} />;
+      faceId={calMode.current === "full" ? faceId : null} />;
   else if (state && teach.flow) {
     withCamera = teach.flow.stage === "ready_face";
     card = (

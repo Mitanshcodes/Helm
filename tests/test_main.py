@@ -313,7 +313,7 @@ def test_calibration_nods_train_the_learned_move_and_land_on_x(monkeypatch, tmp_
     assert json.loads((tmp_path / "sam" / "SuperTuxKart.json").read_text())["gestures"]["nod_up"]["kind"] == "learned"
 
 
-def test_face_id_runs_first_in_a_named_full_calibration_and_protects_the_profile(monkeypatch, tmp_path):
+def test_face_id_learns_during_head_movement_steps_and_protects_the_profile(monkeypatch, tmp_path):
     import helm.identity as identity
     import helm.main as main_mod
     from types import SimpleNamespace
@@ -323,15 +323,18 @@ def test_face_id_runs_first_in_a_named_full_calibration_and_protects_the_profile
     monkeypatch.setattr(identity, "MODEL_PATH", weights)
     monkeypatch.setattr(config, "FACE_ID_INTERVAL_S", 0.0)
     me = np.random.default_rng(1).normal(size=128)
+    embedded: list[int] = []
 
     class Camera:
         seq = 0
         def wait_latest(self, last, timeout=0.2):
+            time.sleep(0.001)
             Camera.seq += 1
             return np.zeros((480, 640, 3), np.uint8), Camera.seq * 1_000_000, Camera.seq
 
     class Encoder:
         def embed(self, image, face):
+            embedded.append(Camera.seq)
             return identity.unit(me + np.random.default_rng(Camera.seq).normal(scale=0.05, size=128))
 
     class Tracker:
@@ -344,16 +347,25 @@ def test_face_id_runs_first_in_a_named_full_calibration_and_protects_the_profile
     rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server", "--player", "sam"]))
     rt._camera = Camera()                                      # a camera, so Face ID can run
     rt._do_calibrate("full")
-    assert rt._face_id is not None and rt._calibrator is None
-    first = rt._face_id_step()
-    assert first.step == "face_id"
+    assert rt._calibrator is not None and rt._face_id is not None   # no step of its own: calibration starts now
+    time.sleep(0.1)
+    assert embedded == []                                      # not sampling until a head-movement step
+    rt._face_id.active = True                                  # what the pipeline sets during neutral / range steps
     deadline = time.monotonic() + 3.0
+    while rt._face_id.samples < config.FACE_ID_SAMPLES and time.monotonic() < deadline:
+        time.sleep(0.01)
+    rt._face_id.active = False                                 # expression steps: no samples
+    count = len(embedded)
+    time.sleep(0.1)
+    assert count == config.FACE_ID_SAMPLES and len(embedded) == count
+    rt._face_id.finish()                                       # the calibration ended
+    rt._calibrator = None
     while not rt._face_id.done and time.monotonic() < deadline:
         time.sleep(0.01)
-    after = rt._face_id_step()                                 # done: protect the profile, start the calibration
-    assert after.step == "neutral" and rt._face_id is None and rt._calibrator is not None
-    assert [e["data"] for e in rt.pop_events() if e["name"] == "face_id_done"] == [{"saved": True, "reason": ""}]
-    assert identity.identity_required("sam") and rt._identity_required
+    rt._face_id_ended()
+    assert [e["data"] for e in rt.pop_events() if e["name"] == "face_id_done"] == [
+        {"saved": True, "reason": "", "samples": config.FACE_ID_SAMPLES}]
+    assert identity.identity_required("sam") and rt._identity_required and rt._face_id is None
 
 
 def test_shared_profiles_and_no_camera_skip_face_id():
