@@ -127,6 +127,13 @@ export function setMinHold(m: Mapping, gesture: string, ms: number): Mapping {
   return next;
 }
 
+/** Put a learned move on a pad target (tap), with its definition, whether or not the catalog lists it yet. */
+export function putLearned(m: Mapping, target: string, name: string): Mapping {
+  const def = { kind: "learned", on: 0.7, off: 0.5 };
+  const catalog = { gestures: [{ name, label: name, group: "learned", usable: true, definition: def }], controls: {} } as unknown as Catalog;
+  return setBinding(m, target, name, "tap", catalog);
+}
+
 /** The pad targets a gesture currently drives. */
 export function targetsOf(m: Mapping | null, gesture: string): string[] {
   return [

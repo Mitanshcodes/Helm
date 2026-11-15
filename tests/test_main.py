@@ -151,7 +151,7 @@ def test_crosstalk_is_held_back_but_two_real_moves_pass():
 
 def test_runtime_competitors_are_the_mapped_gestures_except_pause():
     rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))
-    assert set(rt._competitors) == {"brow_raise", "smile", "nose_scrunch", "jaw_open"}
+    assert set(rt._competitors) == {"brow_raise", "smile", "jaw_open"}
     assert rt._competitors["jaw_open"] == (0.7, frozenset({"jawOpen"}))
 
 

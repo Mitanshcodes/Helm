@@ -48,12 +48,13 @@ def full_calib(reliable=("browInnerUp", "jawOpen", "mouthSmileLeft", "mouthSmile
 
 def test_build_mapping_offline_is_valid():
     calib = default_calibration("guest")
-    result = coach.build_mapping("SuperTuxKart", calib, learned=[], has_breath=False)
+    learned = ["nod_up"]                                                     # full calibration trains this one
+    result = coach.build_mapping("SuperTuxKart", calib, learned=learned, has_breath=False)
     assert result["rationale"][0].startswith("Offline coach") and "no API key" in result["rationale"][-1]
     assert {b["target"] for b in result["mapping"]["buttons"]} >= {"A", "B", "X", "Y"}
     assert result["mapping"]["auto"] == {"rt": 1.0}                        # accelerate is held all race
-    assert profiles.validate_mapping(result["mapping"], calib, [], False) == []
-    assert coach.check(result["mapping"], calib, [], False) == []
+    assert profiles.validate_mapping(result["mapping"], calib, learned, False) == []
+    assert coach.check(result["mapping"], calib, learned, False) == []
 
 
 def test_offline_keeps_only_reliable_gestures():
@@ -194,34 +195,34 @@ def test_deepagents_wiring_with_a_scripted_model(monkeypatch):
 
 
 def test_every_face_button_is_filled_with_the_best_spare_gesture():
-    """Smiles failed the check: B (nitro, held) gets the learned move, X the strongest expression left."""
-    calib = full_calib(reliable=("browInnerUp", "jawOpen", "noseSneerLeft", "noseSneerRight"))
-    calib.blend_peak = {"browInnerUp": 0.8, "jawOpen": 0.9, "noseSneerLeft": 0.5}
-    m = coach.offline_mapping("SuperTuxKart", calib, ["left_smirk"], False)
+    """Smiles failed the check: B (nitro, held) gets the first learned move, X the next one (calibration's nod)."""
+    calib = full_calib(reliable=("browInnerUp", "jawOpen"))
+    calib.blend_peak = {"browInnerUp": 0.8, "jawOpen": 0.9}
+    m = coach.offline_mapping("SuperTuxKart", calib, ["left_smirk", "nod_up"], False)
     by_target = {b["target"]: b for b in m["buttons"]}
     assert set(by_target) == {"A", "B", "X", "Y"}
     assert by_target["A"]["gesture"] == "brow_raise" and by_target["Y"]["gesture"] == "jaw_open"   # layout kept
     assert by_target["B"] == {"gesture": "left_smirk", "target": "B", "mode": "hold"}
-    assert by_target["X"]["gesture"] == "nose_scrunch" and by_target["X"]["mode"] == "tap"
+    assert by_target["X"] == {"gesture": "nod_up", "target": "X", "mode": "tap"}
     assert len({b["gesture"] for b in m["buttons"]}) == 4
-    assert coach.check(m, calib, ["left_smirk"], False) == []
+    assert coach.check(m, calib, ["left_smirk", "nod_up"], False) == []
 
 
 def test_check_rejects_an_empty_face_button_while_a_gesture_is_spare():
     calib = default_calibration("guest", mode="quick")
-    m = coach.offline_mapping("SuperTuxKart", calib, [], False)
+    m = coach.offline_mapping("SuperTuxKart", calib, ["nod_up"], False)
     m["buttons"] = [b for b in m["buttons"] if b["target"] != "Y"]
-    errors = coach.check(m, calib, [], False)
+    errors = coach.check(m, calib, ["nod_up"], False)
     assert any("face buttons Y are unmapped" in e and "jaw_open" in e for e in errors)
 
 
 def test_review_fills_an_empty_button_instead_of_rebuilding():
     calib = default_calibration("guest", mode="quick")
-    mapping = coach.offline_mapping("SuperTuxKart", calib, [], False)
+    mapping = coach.offline_mapping("SuperTuxKart", calib, ["nod_up"], False)
     mapping["gestures"]["brow_raise"]["on"] = 0.7                          # a player's own tuning
     mapping["gestures"]["brow_raise"]["off"] = 0.5
     mapping["buttons"] = [b for b in mapping["buttons"] if b["target"] != "X"]
-    result = coach.review_session(mapping, {"gestures": {}, "notices": []}, calib, [], False)
+    result = coach.review_session(mapping, {"gestures": {}, "notices": []}, calib, ["nod_up"], False)
     assert {b["target"] for b in result["mapping"]["buttons"]} >= {"A", "B", "X", "Y"}
     assert result["mapping"]["gestures"]["brow_raise"]["on"] == 0.7        # tuning kept
     assert any(c.startswith("Mapped an empty button: X") for c in result["changes"])
@@ -230,7 +231,7 @@ def test_review_fills_an_empty_button_instead_of_rebuilding():
 def test_player_report_lists_usable_gestures_for_the_agent():
     report = coach.player_report(default_calibration("guest", mode="quick"), ["left_smirk"], False)
     names = [g["name"] for g in report["usable_gestures"]]
-    assert names[0] == "left_smirk" and {"brow_raise", "smile", "jaw_open", "nose_scrunch"} <= set(names)
+    assert names[0] == "left_smirk" and {"brow_raise", "smile", "jaw_open"} <= set(names)
 
 
 class FakeClaude:
@@ -250,7 +251,7 @@ class FakeClaude:
 
 def test_claude_code_on_the_subscription_fixes_its_errors(monkeypatch):
     calib = default_calibration("sam", mode="quick")
-    good = coach.offline_mapping("SuperTuxKart", calib, [], False)
+    good = coach.offline_mapping("SuperTuxKart", calib, ["nod_up"], False)
     bad = json.loads(json.dumps(good))
     bad["buttons"] = [b for b in bad["buttons"] if b["target"] != "Y"]            # leaves a face button empty
     fake = FakeClaude([
@@ -260,8 +261,8 @@ def test_claude_code_on_the_subscription_fixes_its_errors(monkeypatch):
     monkeypatch.setattr(coach, "_claude_cli", lambda: "/usr/local/bin/claude")
     monkeypatch.setattr(coach.subprocess, "run", fake)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-not-be-used")
-    result = coach.build_mapping("SuperTuxKart", calib, [], False)
-    assert result["rationale"] == ["brow fires items"] and coach.check(result["mapping"], calib, [], False) == []
+    result = coach.build_mapping("SuperTuxKart", calib, ["nod_up"], False)
+    assert result["rationale"] == ["brow fires items"] and coach.check(result["mapping"], calib, ["nod_up"], False) == []
     assert len(fake.prompts) == 2 and "face buttons Y are unmapped" in fake.prompts[1]
     assert "fire item" in fake.prompts[0] and "usable_gestures" in fake.prompts[0]
     assert all("ANTHROPIC_API_KEY" not in env for env in fake.envs)              # the login, never the key

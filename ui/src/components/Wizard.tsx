@@ -58,9 +58,10 @@ export function Wizard({ progress, flow }: { progress: Progress; flow: TeachFlow
     <div className={`setup-card take ${view.phase}`}>
       <div className="card-top">
         <h2 className="card-title">
-          TEACHING · {part}
+          {flow?.setup ? "CALIBRATING · LAST STEP · CUSTOM MOVE · " : `TEACHING · ${part}`}
           {humanize(move).toUpperCase()}
         </h2>
+        {flow?.setup && <p className="fine">Helm is training its own model on your move.</p>}
         <ol className="chips" aria-label={`Try ${view.tryNo} of ${view.total}`}>
           {Array.from({ length: view.total }, (_, i) => (
             <li key={i} className={i + 1 < view.tryNo || view.phase === "done" ? "chip done" : i + 1 === view.tryNo ? "chip now" : "chip"}>
