@@ -26,6 +26,8 @@ export interface Mapping {
 }
 
 export interface HelmState {
+  identity?: { protected: boolean; allowed: boolean; state: string; player: string; reason: string;
+    score?: number | null; face_count?: number; inference_ms?: number; face_landmarker_num_faces?: number | null };
   dev?: { enabled: boolean; recording: boolean; session: null | {
     path: string; kind: string; frames: number; saving: boolean; error: string | null;
   } };
@@ -104,6 +106,7 @@ export interface MappingStatus {
 export type ServerMsg = HelmState | FrameMsg | EventMsg;
 
 export type Command =
+  | { cmd: "reload_identity" }
   | { cmd: "set_dev_mode"; on: boolean }
   | { cmd: "set_dev_recording"; on: boolean }
   | { cmd: "calibrate"; mode: CalibrationMode | "breath" }

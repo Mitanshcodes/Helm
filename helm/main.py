@@ -29,6 +29,7 @@ from helm.mock import MockSource, Recorder, ReplaySource, render_preview
 from helm.output import make_gamepad
 from helm.sipnpuff import BreathCalibrator, SipPuff
 from helm.vision import FaceTracker
+from helm.identity import IdentityWorker, identity_required, unprotected_status
 
 log = logging.getLogger("helm")
 
@@ -184,6 +185,14 @@ class Runtime:
         self._dev_fit_threads = []
         self._dev_end_after_frame = False
         self._video_frame = None
+        self._identity_worker = IdentityWorker(self._camera) if self._camera else None
+        self._identity_generation = 0
+        self._identity_last_seq = -1
+        self._identity_frame_seq = -1
+        self._identity_admitted = False
+        self._identity_clock_s = 0.0
+        self._identity_last_capture_ns = None
+        self._configure_identity()
         self._snapshot = self._build_snapshot(None, None, {}, ControlState(), None)
 
         self._stop = threading.Event()
@@ -195,6 +204,8 @@ class Runtime:
     def start(self) -> None:
         if self._camera:
             self._camera.start()
+        if self._identity_worker:
+            self._identity_worker.start()
         self._sip.start()
         self._thread = threading.Thread(target=self._loop, name="pipeline", daemon=True)
         self._thread.start()
@@ -204,6 +215,8 @@ class Runtime:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=2.0)
+        if self._identity_worker:
+            self._identity_worker.close()
         closers = [lambda: self._pad.apply(ControlState(t_output_ns=time.perf_counter_ns())), self._pad.close,
                    self._sip.stop]
         if self._camera:
@@ -352,9 +365,13 @@ class Runtime:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
+                self._handle_requests()             # recovery/profile commands must work even when identity is locked
                 f = self._next_features()
                 if f is None:                      # no new frame: keep the pad safe
-                    self._pad.apply(ControlState(t_output_ns=time.perf_counter_ns()))
+                    # A confirmed observation may bridge a short no-new-result interval, but only
+                    # within the identity worker's capture-based freshness deadline.
+                    if not (self._identity_required and self._identity_allowed):
+                        self._pad.apply(ControlState(t_output_ns=time.perf_counter_ns()))
                     continue
                 self._step(f)
             except Exception as e:
@@ -380,7 +397,30 @@ class Runtime:
                 except Exception:                  # e.g. no cv2: the dashboard shows its placeholder instead
                     self._draw_preview = False
                     log.exception("mock preview disabled")
+            if self._identity_required and f is not None:
+                self._identity_allowed = False
+                self._identity_status.update(allowed=False, state='no_pixels',
+                                             reason='Protected profiles require camera pixels; feature replay is locked')
             return f
+        if self._identity_required:
+            result, status = self._identity_worker.wait_latest(self._identity_last_seq, timeout=.1)
+            self._identity_status = status
+            self._identity_allowed = bool(status.get('allowed', False))
+            if result is None or result.generation != self._identity_generation:
+                if result is not None:
+                    self._identity_allowed = False
+                if not self._identity_allowed:
+                    self._set_identity_admitted(False)
+                    self._sip.poll()
+                    self._snapshot = self._build_snapshot(None, None, {}, ControlState(), self._paused_identity_progress())
+                else:
+                    self._snapshot = self._snapshot | {'identity': dict(status)}
+                return None
+            self._identity_last_seq = self._identity_frame_seq = result.frame.seq
+            self._last_seq = result.frame.seq
+            self._video_frame = result.image
+            self._preview = (result.image, result.frame.landmarks)
+            return result.frame
         got = self._camera.wait_latest(self._last_seq, timeout=0.5)
         if got is None:
             return None
@@ -397,9 +437,21 @@ class Runtime:
             self._recorder.write(f)                # memory only; the file is written on stop
         self._handle_requests()
 
+        if self._identity_required:
+            admitted = self._identity_allowed and f.face and self._identity_frame_seq == f.seq
+            self._set_identity_admitted(admitted)
+            if not admitted:
+                self._identity_blocked_step(f)
+                return
+            if self._identity_last_capture_ns is not None:
+                self._identity_clock_s += min(max((f.t_capture_ns-self._identity_last_capture_ns)/1e9, 0),
+                                              config.CALIB_MAX_DT_S)
+            self._identity_last_capture_ns = f.t_capture_ns
+        enrollment_t_s = self._identity_clock_s if self._identity_required else t_s
+
         progress: Progress | None = None
         if self._calibrator is not None:
-            progress = self._calibrator.feed(f, t_s)
+            progress = self._calibrator.feed(f, enrollment_t_s)
             if progress.done:
                 self._calib = self._calibrator.result()
                 if self._dev_session:
@@ -421,9 +473,9 @@ class Runtime:
                 # calibration mode, and only when a sensor is actually attached.
                 if self._sip.connected:
                     self._breath_cal = BreathCalibrator(self._sip)
-                    progress = self._breath_cal.feed(t_s)
+                    progress = self._breath_cal.feed(enrollment_t_s)
         elif self._breath_cal is not None:
-            progress = self._breath_cal.feed(t_s)
+            progress = self._breath_cal.feed(enrollment_t_s)
             if progress.done:
                 max_puff, max_sip = self._breath_cal.result()
                 notes = self._breath_cal.notes
@@ -443,7 +495,7 @@ class Runtime:
         s = self._normalizer.update(f, breath=self._sip.level, idle=self._last_idle)
 
         if self._take_recorder is not None:
-            progress = self._take_recorder.feed(s, t_s)
+            progress = self._take_recorder.feed(s, enrollment_t_s)
             if progress.done:
                 self._finish_recording()
                 progress = None
@@ -469,6 +521,11 @@ class Runtime:
         self._pad.apply(out)
         t_output_ns = time.perf_counter_ns()
 
+        self._publish_processed(f, s, act, out, progress, neutral, t_output_ns)
+
+    def _publish_processed(self, f, s, act, out, progress, neutral, t_output_ns):
+        t_s = f.t_capture_ns / 1e9
+
         self._stats.update(act, self._thresholds, self._tracked, out.fired, t_s, active=not neutral)
         self._hold_fired(out.fired, t_output_ns)
         self._frames += 1
@@ -481,7 +538,7 @@ class Runtime:
             if video is None:
                 video = render_preview(f)
             scores = self._model.predict(s.delta) if self._model else {'none': 1.0}
-            if not self._dev_session.submit(video, f, s, act, scores, out, progress):
+            if not self._dev_session.submit(video, f, s, act, scores, out, progress, identity=self._identity_status):
                 self._event('error', {'message': self._dev_session.error or 'Dev recording stopped'})
                 self._dev_end_after_frame = True
             if self._dev_end_after_frame:
@@ -489,6 +546,69 @@ class Runtime:
                 self._dev_session = None
                 self._dev_end_after_frame = False
         self._snapshot = self._build_snapshot(f, s, act, out, progress)
+
+    def _configure_identity(self):
+        self._identity_required = (self.player not in profiles.SHARED_PLAYERS
+                                   and identity_required(self.player))
+        self._identity_allowed = not self._identity_required
+        self._identity_status = unprotected_status(self.player)
+        self._identity_last_seq = self._identity_frame_seq = -1
+        self._identity_admitted = False
+        self._identity_clock_s = 0.0
+        self._identity_last_capture_ns = None
+        if self._identity_worker:
+            self._identity_generation = self._identity_worker.configure(self.player if self._identity_required else None)
+        if self._identity_required:
+            self._identity_status.update(protected=True, allowed=False, state='loading',
+                                         face_landmarker_num_faces=4, reason='Loading face enrollment')
+        if self._source is not None:
+            self._identity_status['face_landmarker_num_faces'] = None
+
+    def _reset_identity_controls(self):
+        paused = getattr(self._mapper, '_paused', False)
+        self._mapper = Mapper(self._mapping)
+        self._mapper.set_paused(paused)
+        self._normalizer = Normalizer(self._calib)
+        self._fatigue = FatigueTracker()
+        self._rebuild_gestures()
+        self._last_idle = True
+        self._last_face_ns = 0
+        self._identity_last_capture_ns = None
+        self._fired_until.clear()
+        self._sip.poll()                            # discard events accumulated while somebody else was visible
+
+    def _set_identity_admitted(self, admitted):
+        if admitted != self._identity_admitted:
+            self._reset_identity_controls()
+        self._identity_admitted = admitted
+
+    def _identity_blocked_step(self, f):
+        """No grace period, breath, auto throttle, calibration sample or enrollment timer on rejection."""
+        f = FrameFeatures(f.seq, f.t_capture_ns, f.t_infer_ns, False)
+        s = Signals(f.seq, f.t_capture_ns, f.t_infer_ns, False,
+                    {a: 0.0 for a in AXES}, np.zeros(52, np.float32), np.zeros(56, np.float32), 0.0)
+        self._sip.poll()
+        out = ControlState(t_output_ns=time.perf_counter_ns(), paused=getattr(self._mapper, '_paused', False))
+        self._pad.apply(out)
+        progress = self._paused_identity_progress()
+        self._publish_processed(f, s, {}, out, progress, True, time.perf_counter_ns())
+
+    def _paused_identity_progress(self):
+        progress = None
+        previous = self._snapshot.get('progress')
+        if previous and (self._calibrator is not None or self._take_recorder is not None or self._breath_cal is not None):
+            progress = Progress(**previous)
+            progress.prompt = 'Waiting for the enrolled person; setup is paused'
+        elif self._calibrator is not None or self._take_recorder is not None or self._breath_cal is not None:
+            progress = Progress(True, 'identity', 'Waiting for the enrolled person; setup is paused', 0, 0)
+        return progress
+
+    def reload_identity(self):
+        self._request('identity_reload')
+
+    def _do_identity_reload(self):
+        self._configure_identity()
+        self._reset_identity_controls()
 
     def _handle_requests(self) -> None:
         with self._lock:
@@ -572,6 +692,7 @@ class Runtime:
             self._dev_session.finish('profile_changed')
             self._dev_session = None
         self.player, self.game = player, game
+        self._calibrator = self._take_recorder = None
         self._breath_cal = None
         self._apply_breath_range(player)
         self._calib, self._mapping, self._model = calib, mapping, model
@@ -579,6 +700,8 @@ class Runtime:
         self._fatigue = FatigueTracker()
         self._mapper.set_mapping(mapping)
         self._rebuild_gestures()
+        self._configure_identity()
+        self._reset_identity_controls()
         self._stats = SessionStats()
         self._event("profile_loaded", {"player": player, "game": game})
 
@@ -811,6 +934,7 @@ class Runtime:
             "breath_connected": self._sip.connected,
             "profile": {"player": self.player, "game": self.game,
                         "calibrated": self._calib.mode if self._calib else None},
+            "identity": dict(self._identity_status),
             "raw": {a: float(getattr(f, a)) if f else 0.0 for a in AXES},
             "axes": {a: float(s.axes[a]) if s else 0.0 for a in AXES},
             "breath": float(s.breath) if s else 0.0,

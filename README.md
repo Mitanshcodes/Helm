@@ -2,8 +2,9 @@
 # Helm
 
 This is the [experimental ML branch of Helm](https://github.com/Mitanshcodes/Helm/tree/experimental/identity-and-geometry).
-The planned face-identity and richer gesture-feature work is described in
-[docs/EXPERIMENTAL_ML.md](docs/EXPERIMENTAL_ML.md). These features are not implemented yet.
+It includes experimental [single-player face protection](docs/IDENTITY.md), full 3D landmark
+capture, and an offline identity evaluator. Gesture-feature studies remain separate from the
+operational classifier; see [docs/EXPERIMENTAL_ML.md](docs/EXPERIMENTAL_ML.md).
 
 **A game controller you steer with your face. Play with whatever moves.**
 
@@ -154,6 +155,8 @@ Coach agent -> worker thread, on request; never on the pipeline thread
 - **Capture** keeps only the newest frame. Threads share "latest value" slots that overwrite, so a
   slow consumer drops stale data instead of building lag.
 - **Face tracking** is MediaPipe Face Landmarker: head pose plus 52 expression scores per frame.
+- **Profile identity (experimental)** selects the enrolled person's face before control processing.
+  Unknown or uncertain faces lock the controller; [setup is explicit](docs/IDENTITY.md).
 - **Normalizer** removes your neutral pose, scales to your calibrated range, and smooths with a One Euro filter.
 - **Gestures** are expression thresholds with hysteresis, plus a personalized logistic classifier
   for learned gestures with a "none" class and temporal confirmation.

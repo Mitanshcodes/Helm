@@ -42,7 +42,7 @@ def blend_from_categories(categories) -> np.ndarray:
 
 
 class FaceTracker:
-    def __init__(self, model_path: str = config.MODEL_PATH):
+    def __init__(self, model_path: str = config.MODEL_PATH, *, num_faces: int = 1):
         import mediapipe as mp
         from mediapipe.tasks.python import BaseOptions
         from mediapipe.tasks.python import vision as mp_vision
@@ -51,7 +51,7 @@ class FaceTracker:
         options = mp_vision.FaceLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=model_path),
             running_mode=mp_vision.RunningMode.VIDEO,
-            num_faces=1,
+            num_faces=num_faces,
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
         )
@@ -60,6 +60,12 @@ class FaceTracker:
         self._names_checked = False
 
     def process(self, bgr: np.ndarray, t_capture_ns: int, seq: int) -> FrameFeatures:
+        """Ungated first-face extraction, retained for existing offline research callers."""
+        faces = self.process_all(bgr, t_capture_ns, seq)
+        return faces[0] if faces else FrameFeatures(seq, t_capture_ns, time.perf_counter_ns(), False)
+
+    def process_all(self, bgr: np.ndarray, t_capture_ns: int, seq: int) -> list[FrameFeatures]:
+        """Extract each visible face from one inference. List order is not an identity."""
         rgb = np.ascontiguousarray(bgr[:, :, ::-1])   # BGR -> RGB. Never mirror before inference.
         image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
         ts_ms = t_capture_ns // 1_000_000
@@ -70,17 +76,21 @@ class FaceTracker:
         t_infer_ns = time.perf_counter_ns()
 
         if not result.face_landmarks or not result.face_blendshapes or not result.facial_transformation_matrixes:
-            return FrameFeatures(seq=seq, t_capture_ns=t_capture_ns, t_infer_ns=t_infer_ns, face=False)
+            return []
+        if not (len(result.face_landmarks) == len(result.face_blendshapes) == len(result.facial_transformation_matrixes)):
+            raise ValueError('MediaPipe returned inconsistent per-face arrays')
 
-        categories = result.face_blendshapes[0]
-        if not self._names_checked:
-            self._check_names(categories)
-        yaw, pitch, roll = pose_from_matrix(result.facial_transformation_matrixes[0])
-        landmarks3d = np.array([(p.x, p.y, p.z) for p in result.face_landmarks[0]], np.float32)
-        landmarks = landmarks3d[:, :2].copy()
-        return FrameFeatures(seq=seq, t_capture_ns=t_capture_ns, t_infer_ns=t_infer_ns, face=True,
-                             yaw=yaw, pitch=pitch, roll=roll, blend=blend_from_categories(categories),
-                             landmarks=landmarks, landmarks3d=landmarks3d)
+        faces = []
+        for points, categories, matrix in zip(result.face_landmarks, result.face_blendshapes,
+                                              result.facial_transformation_matrixes):
+            if not self._names_checked:
+                self._check_names(categories)
+            yaw, pitch, roll = pose_from_matrix(matrix)
+            landmarks3d = np.array([(p.x, p.y, p.z) for p in points], np.float32)
+            faces.append(FrameFeatures(seq=seq, t_capture_ns=t_capture_ns, t_infer_ns=t_infer_ns, face=True,
+                                       yaw=yaw, pitch=pitch, roll=roll, blend=blend_from_categories(categories),
+                                       landmarks=landmarks3d[:, :2].copy(), landmarks3d=landmarks3d))
+        return faces
 
     def close(self) -> None:
         self._landmarker.close()

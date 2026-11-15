@@ -70,6 +70,7 @@ export function CameraView({ frame, state, compact, size, hint }: { frame: Frame
   }, [frame]);
 
   const found = Boolean(frame) && state.face;
+  const identityLocked = state.identity?.protected && !state.identity.allowed;
   return (
     <figure className={`polaroid ${variant}`}>
       <div className="camera">
@@ -83,14 +84,14 @@ export function CameraView({ frame, state, compact, size, hint }: { frame: Frame
           aria-label={!frame ? "No camera picture yet" : found ? "Camera preview with your face outlined" : "Camera preview, no face found"}
         />
         {!frame && <p className="camera-msg">no camera picture yet</p>}
-        {frame && !state.face && <p className="camera-msg">move into view</p>}
+        {frame && !state.face && <p className="camera-msg">{identityLocked ? "waiting for the enrolled person" : "move into view"}</p>}
         {frame && state.face && state.paused && !state.progress && <p className="camera-msg">paused · close your eyes {(state.mapping?.pause?.hold_ms ?? 2000) / 1000} s to resume</p>}
         {hint && <p className="camera-hint">{hint}</p>}
       </div>
       <figcaption>
         <div className="card-head">
           <h2 className="title">the camera</h2>
-          <span className="face-flag">{found ? "✓ face found" : frame ? "✗ no face" : "✗ no video"}</span>
+          <span className="face-flag">{identityLocked ? "🔒 profile locked" : found ? "✓ face found" : frame ? "✗ no face" : "✗ no video"}</span>
         </div>
         {variant !== "compact" && <p className="caption">Video never leaves this laptop.</p>}
         <p className="pose">

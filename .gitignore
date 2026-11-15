@@ -38,3 +38,10 @@ result-*
 
 # Local opt-in camera/debug datasets
 artifacts/dev-datasets/
+
+# Local identity weights, biometric templates, and private validation footage
+artifacts/identity-*/
+profiles/**/identity.json
+profiles/**/identity.json.tmp
+profiles/**/identity_required.json
+profiles/**/identity_required.json.tmp

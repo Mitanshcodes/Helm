@@ -46,3 +46,9 @@ killed processes are not complete datasets.
 
 Recordings remain local until you move or delete them. The JSON signals include the model scores
 and the actual controller state, so false detections can be inspected alongside the source video.
+
+This experimental branch also records raw 3D geometry in `frame.landmarks3d` and the identity
+admission decision in each row's `identity` field. Recording metadata lists observed
+`processing_modes`: identity protection and `face_landmarker_num_faces`. Preserve these fields
+when importing datasets. Single-face and protected multi-face extraction use different smoothing;
+their features must not be silently mixed. See [IDENTITY.md](IDENTITY.md) for enrollment order.
