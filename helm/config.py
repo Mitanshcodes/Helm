@@ -129,11 +129,30 @@ BREATH_MAX_PUFF_MV = 1000.0
 BREATH_MAX_SIP_MV = 1800.0
 # Per-player breath calibration (BreathCalibrator). One prompted sip and one prompted puff.
 CALIB_BREATH_REST_S = 1.5          # settle, so the rolling baseline is clean before the first peak
-# Per direction. 4.0 was too short in practice: a spoken prompt takes about 3 s to read out, so
-# the player heard the instruction with a second left and their breath landed in the NEXT step's
-# window -- a bench run recorded a sip during the puff step for exactly this reason. The window has
-# to outlast the prompt, however the prompt is delivered.
-CALIB_BREATH_STEP_S = 6.0
+# Per direction, TOTAL step length: prompt read-out plus the effort itself. 4.0 was too short, and
+# so was 6.0. Measured at the mac's speech rate, the prompts take 3.6-4.5 s to read out, so a 6 s
+# step left about 1.5 s to react and sip hard -- every live calibration attempt was refused by the
+# MIN_MV floor while direct cueing of the same person on the same rig succeeded 6 times out of 6.
+# Do not tune this by itself: the fix that matters is CALIB_BREATH_EFFORT_S below, which makes the
+# measurement independent of how long the prompt takes however it is delivered.
+CALIB_BREATH_STEP_S = 10.0
+# The step's opening LEAD is not measured; everything after it is. The lead exists to be talked
+# through, and only has to outlast the prompt -- not the player's reaction, which belongs inside
+# the measured window. Nobody sips the instant they are told to.
+#
+# Measuring only a short window at the END of the step is wrong for the same reason: a player who
+# reacts quickly peaks early, and a trailing window throws that peak away unless they also sustain
+# the effort for several more seconds. Lead 2.5 s with a 10 s step measures from 2.5 s to 10 s, so
+# a reaction anywhere from half a second to six seconds after the prompt is captured.
+#
+# A lingering breath from the previous step cannot corrupt this: SipPuff.peaks tracks sip and puff
+# separately, and each step reads only its own direction.
+# 2.5 was measured live and was nearly too long: the player's sip crossed the floor 0.4 s after
+# the window opened, so a slightly faster reaction would have been discarded again. The lead does
+# NOT need to outlast the prompt -- there is no pressure while the player is being talked to. It
+# only has to clear the tail of the PREVIOUS step, specifically the involuntary exhale after
+# releasing a hard sip, which would otherwise be read as the player's puff.
+CALIB_BREATH_LEAD_S = 1.5
 # Full scale is this fraction of the single measured peak, NOT the peak itself. A player's best
 # effort is not their typical effort: the bench rig measured one person's puff at 2410, 1024 and
 # 1078 mV across three tries. Scaling to the peak would leave an ordinary puff below BREATH_HARD

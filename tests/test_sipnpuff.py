@@ -523,3 +523,60 @@ def test_a_refused_measurement_is_not_marked_accepted():
     walk(good, sip2, sip_mv=2400.0, puff_mv=20.0)       # one direction is enough to be worth saving
     good.result()
     assert good.accepted is True
+
+
+def _walk_injecting(cal, sip, *, direction, mv, window, fps=30.0):
+    """Drive the calibrator, injecting a peak only while `window(elapsed_in_step)` is true.
+
+    Models a real breath instead of the steady pressure `walk` fakes: a player reacts some time
+    after the prompt, peaks, and stops. `elapsed_in_step` is measured from the step's own start.
+    """
+    step_name = f"breath_{direction}"
+    attr = f"_peak_{direction}_mv"
+    t, started = 0.0, None
+    while not cal.done and t < 90.0:
+        progress = cal.feed(t)
+        if progress.step == step_name:
+            if started is None:
+                started = t
+            if window(t - started):
+                setattr(sip, attr, mv)
+        t += 1.0 / fps
+    return cal
+
+
+def test_breath_calibrator_captures_a_prompt_reaction_not_only_a_sustained_one():
+    """A player who reacts promptly and then runs out of breath must still be measured.
+
+    Measuring only a trailing slice of the step discards exactly this player: they peak while the
+    prompt is barely finished and have nothing left by the end of the step. The measured window
+    therefore opens right after the lead and stays open.
+    """
+    lead = config.CALIB_BREATH_LEAD_S
+    sip = SipPuff(None)
+    cal = _walk_injecting(BreathCalibrator(sip), sip, direction="sip", mv=2400.0,
+                          window=lambda e: lead + 0.3 <= e <= lead + 1.0)
+    _, max_sip = cal.result()
+    assert cal.accepted and max_sip == 2400.0 * config.CALIB_BREATH_FRACTION
+
+
+def test_breath_calibrator_captures_a_late_reaction():
+    """The other end of the same window: a slow reactor peaking near the end of the step."""
+    step = config.CALIB_BREATH_STEP_S
+    sip = SipPuff(None)
+    cal = _walk_injecting(BreathCalibrator(sip), sip, direction="sip", mv=2400.0,
+                          window=lambda e: step - 1.0 <= e <= step)
+    _, max_sip = cal.result()
+    assert cal.accepted and max_sip == 2400.0 * config.CALIB_BREATH_FRACTION
+
+
+def test_breath_calibrator_ignores_pressure_during_the_lead():
+    """The lead is unmeasured on purpose: it is the player still being told what to do, and can
+    hold the tail of the previous step's breath. Pressure there must not become their scale."""
+    lead = config.CALIB_BREATH_LEAD_S
+    assert lead > 0.2, "a zero lead would measure the prompt itself"
+    sip = SipPuff(None)
+    cal = _walk_injecting(BreathCalibrator(sip), sip, direction="sip", mv=2400.0,
+                          window=lambda e: e <= lead - 0.2)
+    _, max_sip = cal.result()
+    assert not cal.accepted and max_sip == config.BREATH_MAX_SIP_MV

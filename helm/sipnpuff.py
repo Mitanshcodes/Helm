@@ -335,8 +335,8 @@ class BreathCalibrator:
     # step name, seconds, prompt, which peak it reads ("" settles the baseline and reads nothing)
     _STEPS = (
         ("breath_rest", config.CALIB_BREATH_REST_S, "Hands off the tube, breathe normally", ""),
-        ("breath_sip", config.CALIB_BREATH_STEP_S, "Sip hard on the tube, like a thick straw, and hold", "sip"),
-        ("breath_puff", config.CALIB_BREATH_STEP_S, "Now puff hard into the tube, and hold", "puff"),
+        ("breath_sip", config.CALIB_BREATH_STEP_S, "Sip hard on the tube, and keep sipping", "sip"),
+        ("breath_puff", config.CALIB_BREATH_STEP_S, "Now puff hard into the tube, and keep puffing", "puff"),
     )
 
     def __init__(self, sip: "SipPuff"):
@@ -346,6 +346,7 @@ class BreathCalibrator:
         self._done_s = 0.0
         self._total_s = sum(s[1] for s in self._STEPS)
         self._measured: dict[str, float] = {}
+        self._armed = False        # has this step's measurement window opened yet?
         self.done = False
         self.accepted = False      # did either direction produce a measurement worth keeping?
         self.notes: list[str] = []
@@ -358,8 +359,17 @@ class BreathCalibrator:
         name, duration, prompt, measures = self._STEPS[self._i]
         if self._started_s is None:
             self._started_s = t_s
-            self._sip.reset_peaks()
+            self._armed = False
         elapsed = max(0.0, t_s - self._started_s)
+
+        # Skip the opening lead, then measure everything to the end of the step. The lead only has
+        # to outlast the prompt; the player's reaction time belongs INSIDE the measured window.
+        # Resetting at step start meant a 4.5 s spoken prompt ate 75% of a 6 s step and every live
+        # measurement was refused. Measuring only a trailing window is the opposite mistake: it
+        # discards the peak of anyone who reacts promptly and then runs out of breath.
+        if measures and not self._armed and elapsed >= min(config.CALIB_BREATH_LEAD_S, duration):
+            self._sip.reset_peaks()
+            self._armed = True
 
         if elapsed >= duration:
             if measures:
@@ -368,6 +378,7 @@ class BreathCalibrator:
             self._done_s += duration
             self._i += 1
             self._started_s = None
+            self._armed = False
             if self._i == len(self._STEPS):
                 self.done = True
                 return self.feed(t_s)
