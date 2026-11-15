@@ -19,7 +19,7 @@ export function ProfileCard(props: { state: HelmState; send: Send; onSwitch: () 
       <p className="caption" role="status">
         Face identity: {state.identity?.protected ? state.identity.allowed ? "recognized" : "controls locked" : "unprotected"}.
         {" "}{state.identity?.state === "error" ? "Face protection could not start; controls are locked." : state.identity?.reason ?? "No face enrollment: this profile accepts any face."}
-        {!shared && <>{" "}Face enrollment is a separate setup step; opening a profile never learns a new face.</>}
+        {!shared && <>{" "}A full calibration also learns your face (Face ID) while you turn your head; opening a profile never learns a new face.</>}
       </p>
       <p className="caption">
         {calibrated === "full" ? "Fully calibrated." : calibrated === "quick" ? "Quick setup: resting face only." : "Not calibrated yet."}{" "}

@@ -5,6 +5,22 @@ profile admits only a confirmed matching face. Other visible faces are considere
 selection but never receive controllers. MediaPipe's default offline `FaceTracker.process` remains
 ungated for gesture studies; live protection is a separate asynchronous camera worker.
 
+## In the app: Face ID during calibration
+
+A named profile's full calibration (onboarding a New profile, or Recalibrate) learns the face as it goes, with
+no step of its own, so nobody has to stop Helm and run the command below:
+
+- **When it samples:** only in the head-movement steps (resting face, turn left/right, chin up/down), never in the
+  expression steps.
+- **How:** `main.FaceEnrollment` takes one sample every 0.75 s until it has 16, keeping an SFace reference only
+  when exactly one face is in view.
+- **When the calibration ends:** it saves them with `save_template` (at least 8) and the profile is protected from
+  then on. With fewer clear samples it is skipped and the dashboard says why.
+- **When it doesn't run:** the shared Default/guest and judge profiles, mock/replay, and a laptop without the model.
+  Run `python -m helm.identity download` once on the demo laptop.
+
+The command-line enrollment below still works, for videos and experiments.
+
 ## Deliberate enrollment
 
 Enrollment is an explicit offline setup step, not part of ordinary calibration or profile loading.

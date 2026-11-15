@@ -1,5 +1,7 @@
 # OWNER: P1
 """Calibrator state machine, full and quick (docs/SPEC.md 6.5). Steps advance on timers; no clicks."""
+import dataclasses
+
 import numpy as np
 
 from helm import config
@@ -18,7 +20,12 @@ _FULL_STEPS = (
     ("brow_raise", config.CALIB_EXPRESSION_S, "Raise your eyebrows, three times", ("expr", "browInnerUp")),
     ("jaw_open", config.CALIB_EXPRESSION_S, "Open your mouth wide, three times", ("expr", "jawOpen")),
     ("smile", config.CALIB_EXPRESSION_S, "Smile wide, three times", ("expr", "mouthSmileLeft", "mouthSmileRight")),
+    # A learned move, not an expression: each nod is a take for Helm's own model (main.py trains it at the end).
+    ("nod_up", config.CALIB_EXPRESSION_S, "Nod your chin up and hold a moment, three times", ("nod",)),
 )
+NOD_MOVE = "nod_up"
+# Steps whose frames teach the model what is NOT a nod. chin-up (pitch_up) is the nod's own pose, so it is left out.
+_NOT_NOD_STEPS = ("neutral", "yaw_left", "yaw_right", "pitch_down", "brow_raise", "jaw_open", "smile")
 _QUICK_STEPS = (("neutral", config.CALIB_NEUTRAL_QUICK_S, _NEUTRAL[2], ("neutral",)),)
 _DIRECTION_WORD = {("yaw", -1): "left", ("yaw", 1): "right", ("pitch", 1): "up", ("pitch", -1): "down"}
 _NO_FACE_PROMPT = "I can't see your face. Look at the screen"
@@ -74,6 +81,9 @@ class Calibrator:
         self._rep_peak = 0.0
         self._rep_source_peak: list[float] = []
         self._rest: list[np.ndarray] = []          # relaxed face from the neutral and head-turn steps
+        self._nod_takes: list[list[FrameFeatures]] = []   # the nod step: frames of each repetition, chin up
+        self._nod_frames: list[FrameFeatures] = []
+        self._not_nod: list[list[FrameFeatures]] = []     # one segment per _NOT_NOD_STEPS step
         self._done_s = 0.0                         # seconds of completed steps
         self._last_t: float | None = None
         self._samples: list[tuple[float, FrameFeatures]] = []
@@ -93,7 +103,7 @@ class Calibrator:
         if not f.face:                             # the timer pauses while the face is lost
             return self._progress(prompt=_NO_FACE_PROMPT)
 
-        self._samples.append((t_s, f))
+        self._samples.append((t_s, dataclasses.replace(f, landmarks=None, landmarks3d=None)))   # preview only
         self._elapsed += dt
         name, duration, _, measure = self._steps[self._i]
         if measure[0] == "range":                  # wait for the turn itself, not just the clock
@@ -115,6 +125,20 @@ class Calibrator:
                     self._reps.append(self._rep_peak)
                     self._rep_sources.append(self._rep_source_peak)
             finished = len(self._reps) >= 3 or self._elapsed >= config.CALIB_EXPRESSION_MAX_S
+        elif measure[0] == "nod":                  # count nods by how far the chin goes up; keep each one's frames
+            up = f.pitch - self._neutral["pitch"]
+            on = max(config.CALIB_NOD_MIN_DEG, config.CALIB_NOD_FRACTION * self._range["pitch"][1])
+            if up >= on:
+                self._in_rep = True
+                self._rep_peak = max(self._rep_peak, up)
+                self._nod_frames.append(self._samples[-1][1])
+            elif self._in_rep and up < 0.5 * on:
+                self._in_rep = False
+                if len(self._nod_frames) >= config.CALIB_NOD_MIN_FRAMES:
+                    self._reps.append(self._rep_peak)
+                    self._nod_takes.append(self._nod_frames)
+                self._nod_frames, self._rep_peak = [], 0.0
+            finished = len(self._reps) >= 3 or self._elapsed >= config.CALIB_EXPRESSION_MAX_S
         else:
             finished = self._elapsed >= duration
         if measure[0] in ("neutral", "range"):     # how much a relaxed face moves, e.g. while steering
@@ -126,10 +150,16 @@ class Calibrator:
             self._elapsed = 0.0
             self._held = 0.0
             self._reps, self._rep_sources, self._in_rep, self._rep_peak = [], [], False, 0.0
+            self._nod_frames = []
             self._samples = []
             if self._i == len(self._steps):
                 self._done = True
         return self._progress()
+
+    def nod_samples(self) -> tuple[list[list[FrameFeatures]], list[list[FrameFeatures]]]:
+        """The nod step's repetitions (one list of frames each) and the not-a-nod segments, for training the
+        learned "nod_up" move once the calibration (which its features are relative to) is known. Raw frames."""
+        return [list(t) for t in self._nod_takes], [list(s) for s in self._not_nod]
 
     def result(self) -> Calibration:
         """Valid once Progress.done is True."""
@@ -157,7 +187,7 @@ class Calibrator:
             return Progress(active=False, step="done", prompt=text, progress=1.0, overall=1.0, done=True)
         name, duration, step_prompt, measure = self._steps[self._i]
         step_progress = min(self._elapsed / duration, 1.0)
-        if measure[0] == "expr":                   # the bar fills with each repetition
+        if measure[0] in ("expr", "nod"):          # the bar fills with each repetition
             step_progress = len(self._reps) / 3
             if prompt is None and self._reps:
                 prompt = f"{step_prompt} ({len(self._reps)} of 3)"
@@ -177,6 +207,12 @@ class Calibrator:
         frames = [f for _, f in self._samples]
         self._prompt_note = ""
         if not frames:
+            return
+        if name in _NOT_NOD_STEPS:
+            self._not_nod.append(frames[::config.CALIB_NOT_NOD_STRIDE])
+        if measure[0] == "nod":
+            if len(self._nod_takes) < 2:
+                self.notes.append("Nod up was hard to read; teach it again in Your moves.")
             return
         if measure[0] == "neutral":
             for a in AXES:

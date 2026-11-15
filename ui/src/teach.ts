@@ -31,7 +31,6 @@ export interface TeachFlow {
   withFace: boolean; // this run includes the everyday-face recording
   readyUntil: number; // performance.now() deadline while in a ready stage
   result: Trained | null;
-  setup?: boolean; // the custom move at the end of a full calibration, not one the player chose to teach
 }
 
 const recording = (stage: Stage) => stage === "face" || stage === "move";
@@ -140,14 +139,7 @@ export function useTeachFlow(send: (cmd: Command) => void) {
     return false;
   }, [recordMove]);
 
-  /** The last step of a full calibration: record `name` afresh (earlier tries of it are dropped), no intro card. */
-  const custom = useCallback((name: string) => {
-    send({ cmd: "delete_gesture", name });
-    send({ cmd: "record_gesture", name });
-    setFlow({ stage: "move", name, withFace: false, readyUntil: 0, result: null, setup: true });
-  }, [send]);
-
   const close = useCallback(() => setFlow(null), []);
   const hasFace = useCallback((player: string) => faceDone.current.has(player), []);
-  return { flow, offer, begin, go, custom, close, onEvent, hasFace };
+  return { flow, offer, begin, go, close, onEvent, hasFace };
 }

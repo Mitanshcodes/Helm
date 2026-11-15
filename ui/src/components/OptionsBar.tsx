@@ -1,5 +1,5 @@
 // OWNER: P4
-// OPTIONS footer: text size, contrast, motion, sound, and "replay intro". Saved in this browser. Text size
+// OPTIONS footer: text size, contrast, motion, ships, sound, and "replay intro". Saved in this browser. Text size
 // scales the whole page; contrast and motion are attributes on <html> that the stylesheet reads.
 import { useEffect, useState } from "react";
 
@@ -8,10 +8,11 @@ export interface Options {
   text: TextSize;
   contrast: "std" | "high";
   motion: "on" | "low";
+  ships: "on" | "off"; // the pixel ships sailing behind the camera
 }
 
 const KEY = "helm.options";
-const DEFAULTS: Options = { text: "1", contrast: "std", motion: "on" };
+const DEFAULTS: Options = { text: "1", contrast: "std", motion: "on", ships: "on" };
 
 export function useOptions(): [Options, (o: Partial<Options>) => void] {
   const [options, setOptions] = useState<Options>(() => {
@@ -25,6 +26,7 @@ export function useOptions(): [Options, (o: Partial<Options>) => void] {
     const root = document.documentElement;
     root.dataset.contrast = options.contrast;
     root.dataset.motion = options.motion;
+    root.dataset.ships = options.ships;
     root.style.setProperty("--zoom", options.text);
     try {
       localStorage.setItem(KEY, JSON.stringify(options));
@@ -56,6 +58,7 @@ export function OptionsBar(props: { options: Options; set: (o: Partial<Options>)
       <Group label="TEXT" value={options.text} choices={[["1", "A"], ["1.12", "A+"], ["1.25", "A++"]]} onChange={(text) => set({ text })} />
       <Group label="CONTRAST" value={options.contrast} choices={[["std", "STD"], ["high", "HIGH"]]} onChange={(contrast) => set({ contrast })} />
       <Group label="MOTION" value={options.motion} choices={[["on", "ON"], ["low", "LOW"]]} onChange={(motion) => set({ motion })} />
+      <Group label="SHIPS" value={options.ships} choices={[["on", "ON"], ["off", "OFF"]]} onChange={(ships) => set({ ships })} />
       <Group label="SOUND" value={sound ? "on" : "off"} choices={[["on", "ON"], ["off", "OFF"]]} onChange={(v) => setSound(v === "on")} />
       <button className="btn replay" onClick={onReplayIntro}>
         REPLAY INTRO

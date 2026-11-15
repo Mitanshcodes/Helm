@@ -10,6 +10,7 @@ const EXPR_STEPS: [string, string, string[]][] = [
   ["brow_raise", "EYEBROWS", ["browInnerUp"]],
   ["jaw_open", "JAW", ["jawOpen"]],
   ["smile", "SMILE", ["mouthSmileLeft", "mouthSmileRight"]],
+  ["nod_up", "NOD", []], // a learned move: the engine trains Helm's own model on these nods
 ];
 export type CalMode = "full" | "quick" | "breath";
 export interface BreathResult {
@@ -24,8 +25,7 @@ const isBreath = (step: string) => step.startsWith("breath");
 function chipsFor(mode: CalMode, breathConnected: boolean): string[] {
   if (mode === "quick") return ["NEUTRAL"];
   if (mode === "breath") return ["BREATH"];
-  // Full calibration ends with the custom move (a nod up Helm trains its own model on; it runs in the Wizard).
-  return breathConnected ? ["NEUTRAL", "RANGE", "MOVES", "BREATH", "CUSTOM"] : ["NEUTRAL", "RANGE", "MOVES", "CUSTOM"];
+  return breathConnected ? ["NEUTRAL", "RANGE", "MOVES", "BREATH"] : ["NEUTRAL", "RANGE", "MOVES"];
 }
 
 function groupOf(step: string, chips: string[]): number {
@@ -44,7 +44,11 @@ const HINT: Record<string, string> = {
   breath_puff: "PUFF HARD · HOLD",
 };
 export const cameraHint = (progress: Progress | null) =>
-  progress ? HINT[progress.step] ?? (EXPR_STEPS.some(([s]) => s === progress.step) ? "MAKE THE FACE · 3 TIMES" : null) : null;
+  progress
+    ? progress.step === "nod_up"
+      ? "CHIN UP · HOLD · 3 TIMES"
+      : HINT[progress.step] ?? (EXPR_STEPS.some(([s]) => s === progress.step) ? "MAKE THE FACE · 3 TIMES" : null)
+    : null;
 
 export interface Track {
   yaw: [number, number];
@@ -131,29 +135,21 @@ export function CalibrationCard(props: { state: HelmState; progress: Progress; m
 
 export interface CustomResult {
   name: string;
-  accuracy: number | null; // leave-one-take-out, 0..1
-  target: string | null; // the button it was put on
+  accuracy: number | null; // leave-one-take-out, 0..1, once the model is trained
 }
 
-/** The step before the custom move starts (while the engine switches from calibration to recording). */
-export function CustomNext({ name, training }: { name: string; training: boolean }) {
-  return (
-    <div className="setup-card">
-      <h2 className="card-title">CALIBRATING · LAST STEP · CUSTOM MOVE</h2>
-      <p className="instruction" role="status" aria-live="polite">
-        {training ? `Training Helm's model on your ${humanize(name).toLowerCase()}…` : `Last one: ${humanize(name).toLowerCase()}`}
-      </p>
-      <p className="lead">
-        {training ? "A second or two." : "Tilt your chin up when it says GO. Five tries, about 30 seconds: Helm trains its own model on them."}
-      </p>
-    </div>
-  );
+export interface FaceIdResult {
+  saved: boolean;
+  reason: string;
 }
 
-export function CalibrationDone({ state, mode, track, breath, custom }: { state: HelmState; mode: CalMode; track: Track; breath: BreathResult | null; custom?: CustomResult | null }) {
+export function CalibrationDone(props: { state: HelmState; mode: CalMode; track: Track; breath: BreathResult | null; custom?: CustomResult | null; faceId?: FaceIdResult | null }) {
+  const { state, mode, track, breath, custom, faceId } = props;
   const reliable = new Set(state.gestures?.reliable ?? []);
-  const found = EXPR_STEPS.filter(([, , sources]) => sources.some((s) => reliable.has(s)));
-  const weak = EXPR_STEPS.filter(([step, , sources]) => track.steps.includes(step) && !sources.some((s) => reliable.has(s)));
+  const faces = EXPR_STEPS.filter(([, , sources]) => sources.length > 0);
+  const found = faces.filter(([, , sources]) => sources.some((s) => reliable.has(s)));
+  const weak = faces.filter(([step, , sources]) => track.steps.includes(step) && !sources.some((s) => reliable.has(s)));
+  const onX = state.mapping?.buttons?.some((b) => b.target === "X" && b.gesture === custom?.name);
   const breathPart = breath ? [`Breath: puff ${Math.round(breath.puff)} mV, sip ${Math.round(breath.sip)} mV`] : [];
   const parts =
     mode === "breath"
@@ -165,8 +161,9 @@ export function CalibrationDone({ state, mode, track, breath, custom }: { state:
             `${found.length} ${found.length === 1 ? "move" : "moves"} found`,
             ...(weak.length ? [`${weak.map(([, l]) => l).join(", ")} too weak`] : []),
             ...breathPart,
+            ...(faceId ? [faceId.saved ? "Face ID on: only you control this profile" : faceId.reason] : []),
             ...(custom
-              ? [`${humanize(custom.name)} trained${custom.accuracy !== null ? ` (${Math.round(custom.accuracy * 100)}% recognized)` : ""}${custom.target ? ` · on ${custom.target}` : ""}`]
+              ? [`${humanize(custom.name)} learned${custom.accuracy !== null ? ` (${Math.round(custom.accuracy * 100)}% recognized)` : ""}${onX ? " · on X" : ""}`]
               : []),
           ];
   return (

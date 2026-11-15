@@ -19,7 +19,7 @@ import numpy as np
 from helm import coach, config, profiles
 from helm.dev_recording import DevRecording
 from helm.adapt import FatigueTracker
-from helm.calibration import Calibrator, default_calibration
+from helm.calibration import NOD_MOVE, Calibrator, default_calibration
 from helm.capture import Camera
 from helm.contracts import AXES, BLENDSHAPE_NAMES, ControlState, FrameFeatures, Progress, Signals
 from helm.filters import Normalizer
@@ -60,6 +60,91 @@ def hold_back_crosstalk(act: dict[str, float], competitors: dict[str, tuple[floa
                 out = dict(act)
             out[name] = 0.0
     return out
+
+
+# Calibration steps where the player moves their head (not the expression steps): Face ID samples only these.
+FACE_ID_STEPS = ("neutral", "yaw_left", "yaw_right", "pitch_up", "pitch_down")
+
+
+class FaceEnrollment:
+    """Face ID, learned during an ordinary full calibration of a named profile, with no step of its own (P3's
+    `helm.identity` does the recognition; this replaces its command-line `enroll`). While the pipeline marks it
+    `active` (the head-movement steps, FACE_ID_STEPS), a worker thread takes one sample every FACE_ID_INTERVAL_S
+    until it has FACE_ID_SAMPLES, keeping an SFace reference only when exactly one face is in view. When the
+    calibration ends the pipeline calls finish(): with at least FACE_ID_MIN_SAMPLES it saves them with
+    `identity.save_template`. Nothing here runs on the pipeline thread."""
+
+    def __init__(self, camera, player: str):
+        self._camera, self.player = camera, player
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._finish = threading.Event()
+        self.active = False                        # set by the pipeline: a head-movement step is running
+        self._samples = 0
+        self.done = False
+        self.saved = False
+        self.reason = ""
+        self._thread = threading.Thread(target=self._run, name="face-id", daemon=True)
+
+    def start(self) -> "FaceEnrollment":
+        self._thread.start()
+        return self
+
+    def cancel(self) -> None:
+        self._stop.set()
+
+    def finish(self) -> None:
+        """The calibration ended: stop sampling and save what was collected."""
+        self._finish.set()
+
+    @property
+    def samples(self) -> int:
+        with self._lock:
+            return self._samples
+
+    def _done(self, saved: bool, reason: str) -> None:
+        with self._lock:
+            self.saved, self.reason, self.done = saved, reason, True
+
+    def _run(self) -> None:
+        from helm import identity
+        tracker = None
+        try:
+            encoder = identity.SFace()
+            tracker = FaceTracker(num_faces=4)     # to tell "just you" from "someone else is in view"
+            vectors, seq, next_at = [], -1, 0.0
+            while not self._stop.is_set() and not self._finish.is_set():
+                got = self._camera.wait_latest(seq, timeout=0.2)
+                if got is None:
+                    continue
+                seq = got[2]
+                if not self.active or len(vectors) >= config.FACE_ID_SAMPLES or time.monotonic() < next_at:
+                    continue
+                image, capture_ns, seq = got
+                next_at = time.monotonic() + config.FACE_ID_INTERVAL_S
+                faces = tracker.process_all(image, capture_ns, seq)
+                if len(faces) != 1:                # nobody, or someone else in view: not a reference
+                    continue
+                try:
+                    vectors.append(encoder.embed(image, faces[0]))
+                except ValueError:                 # too small or turned too far: not a usable reference
+                    continue
+                with self._lock:
+                    self._samples = len(vectors)
+            if self._stop.is_set():
+                return self._done(False, "cancelled")
+            if len(vectors) < config.FACE_ID_MIN_SAMPLES:
+                return self._done(False, "Face ID needs one clear face in view while you turn your head; it was skipped")
+            identity.save_template(self.player, vectors, provenance={"source": "calibration", "frames": len(vectors)})
+            self._done(True, "")
+        except FileNotFoundError:
+            self._done(False, "Face ID model is not downloaded on this laptop (python -m helm.identity download)")
+        except Exception as e:                     # never take calibration down with it
+            log.warning("face id enrollment failed: %s", e)
+            self._done(False, f"Face ID was skipped: {e}")
+        finally:
+            if tracker:
+                tracker.close()
 
 
 def _load_model(player: str) -> GestureModel | None:
@@ -186,6 +271,7 @@ class Runtime:
         self._dev_end_after_frame = False
         self._video_frame = None
         self._identity_worker = IdentityWorker(self._camera) if self._camera else None
+        self._face_id: FaceEnrollment | None = None   # Face ID learning during a full calibration
         self._identity_generation = 0
         self._identity_last_seq = -1
         self._identity_frame_seq = -1
@@ -217,6 +303,7 @@ class Runtime:
             self._thread.join(timeout=2.0)
         if self._identity_worker:
             self._identity_worker.close()
+        self._cancel_face_id()
         closers = [lambda: self._pad.apply(ControlState(t_output_ns=time.perf_counter_ns())), self._pad.close,
                    self._sip.stop]
         if self._camera:
@@ -452,12 +539,17 @@ class Runtime:
         progress: Progress | None = None
         if self._calibrator is not None:
             progress = self._calibrator.feed(f, enrollment_t_s)
+            if self._face_id is not None:
+                self._face_id.active = f.face and progress.step in FACE_ID_STEPS
             if progress.done:
+                if self._face_id is not None:
+                    self._face_id.finish()
                 self._calib = self._calibrator.result()
                 if self._dev_session:
                     self._dev_session.calibration(self._calib)
                     self._dev_end_after_frame = self._dev_session.kind == 'calibration'
                 notes = self._calibrator.notes
+                nod_takes, not_nod = self._calibrator.nod_samples()
                 self._calibrator = None
                 self._normalizer.set_calibration(self._calib)
                 self._fatigue = FatigueTracker()   # levels are on a new scale: old baselines no longer compare
@@ -465,13 +557,17 @@ class Runtime:
                 self._worker(profiles.save_calibration, self._calib)
                 self._event("calibration_done", {"mode": self._calib.mode, "reliable": list(self._calib.reliable),
                                                  "range": {a: list(r) for a, r in self._calib.range.items()},
-                                                 "notes": notes})
+                                                 "notes": notes, "nod_takes": len(nod_takes)})
+                if len(nod_takes) >= 2:            # the nod step's repetitions train the learned "nod_up" move
+                    self._worker(self._prepare_nod, self._calib, dict(self._normalizer.gain), nod_takes, not_nod)
                 # Breath range is measured straight after the face, while the player is still in
                 # calibration mode, and only when a sensor is actually attached.
                 if self._sip.connected:
                     self._breath_cal = BreathCalibrator(self._sip)
                     progress = self._breath_cal.feed(enrollment_t_s)
-        elif self._breath_cal is not None:
+        if self._face_id is not None and self._calibrator is None and self._face_id.done:
+            self._face_id_ended()
+        if progress is None and self._breath_cal is not None:
             progress = self._breath_cal.feed(enrollment_t_s)
             if progress.done:
                 max_puff, max_sip = self._breath_cal.result()
@@ -665,9 +761,33 @@ class Runtime:
             return
         self._start_dev_capture('calibration')
         self._breath_cal = None
+        self._cancel_face_id()
         self._calibrator = Calibrator(self.player, mode)
+        # Face ID learns the player's face during this calibration's head-movement steps (named profiles only).
+        if mode == "full" and self._face_id_possible():
+            self._face_id = FaceEnrollment(self._camera, self.player).start()
+
+    def _face_id_possible(self) -> bool:
+        from helm import identity
+        return (self._camera is not None and self.player not in profiles.SHARED_PLAYERS
+                and identity.MODEL_PATH.exists())
+
+    def _cancel_face_id(self) -> None:
+        if self._face_id is not None:
+            self._face_id.cancel()
+            self._face_id = None
+
+    def _face_id_ended(self) -> None:
+        """Pipeline, after the calibration: once Face ID has saved (or given up), protect the profile."""
+        enrollment, self._face_id = self._face_id, None
+        self._event("face_id_done", {"saved": enrollment.saved, "reason": enrollment.reason,
+                                     "samples": enrollment.samples})
+        if enrollment.saved:
+            self._configure_identity()             # from here on only this face controls the profile
+            self._reset_identity_controls()
 
     def _do_record(self, name: str | None) -> None:
+        self._cancel_face_id()
         self._start_dev_capture('gesture' if name else 'negative', name)
         self._calibrator = None
         self._breath_cal = None
@@ -689,6 +809,7 @@ class Runtime:
             self._dev_session.finish('profile_changed')
             self._dev_session = None
         self.player, self.game = player, game
+        self._cancel_face_id()
         self._calibrator = self._take_recorder = None
         self._breath_cal = None
         self._apply_breath_range(player)
@@ -740,6 +861,40 @@ class Runtime:
             self._event("gesture_trained", data)
 
         self._use_model(model, then=report)
+
+    def _prepare_nod(self, calib, gains: dict[str, float], takes: list, not_nod: list) -> None:
+        """Worker: turn the calibration's nod repetitions (and its not-a-nod steps) into model data, as the
+        pipeline would have seen them with the new calibration, then hand the model to the pipeline thread."""
+        def deltas(frames) -> np.ndarray:
+            norm = Normalizer(calib)               # a fresh one per segment, like a recording starting
+            norm.set_gains(gains)
+            return np.stack([norm.update(f).delta for f in frames])
+
+        model = self._model.copy() if self._model else GestureModel()
+        model.remove(NOD_MOVE)                     # a new calibration replaces the old nods
+        for frames in takes:
+            model.add_take(NOD_MOVE, deltas(frames))
+        for frames in not_nod:
+            if frames:
+                model.add_negative(deltas(frames))
+        self._request("adopt_nod", model)
+
+    def _do_adopt_nod(self, model: GestureModel) -> None:
+        """Pipeline: use the model with the new nod, and put the nod on X when X is free or already had it."""
+        def report(accuracy: dict[str, float]) -> None:
+            self._event("gesture_trained", {"name": NOD_MOVE, "accuracy": accuracy.get(NOD_MOVE), "calibration": True})
+
+        self._use_model(model, then=report)
+        buttons = list(self._mapping.get("buttons") or [])
+        on_x = next((b.get("gesture") for b in buttons if b.get("target") == "X"), None)
+        if on_x not in (None, NOD_MOVE):
+            return
+        mapping = json.loads(json.dumps(self._mapping))
+        mapping.setdefault("gestures", {})[NOD_MOVE] = {"kind": "learned", "on": config.LEARNED_ON, "off": config.LEARNED_OFF}
+        mapping["buttons"] = [b for b in buttons if b.get("target") != "X"] + [{"gesture": NOD_MOVE, "target": "X", "mode": "tap"}]
+        self._do_set_mapping(mapping)
+        if self.player not in profiles.SHARED_PLAYERS:
+            self._worker(profiles.save_mapping, self.player, self.game, mapping)
 
     def _use_model(self, model: GestureModel, then) -> None:
         """Switch to `model` now (it predicts with its previous classifier), fit it and save it on a worker.

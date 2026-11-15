@@ -286,3 +286,89 @@ def test_steering_sensitivity_comes_from_the_mapping_and_is_published():
     from helm.contracts import ControlState
     rt._snapshot = rt._build_snapshot(None, None, {}, ControlState(), None)
     assert rt.snapshot()["ranges"]["yaw"] == [pytest.approx(base[0] / 2, abs=0.1), pytest.approx(base[1] / 2, abs=0.1)]
+
+
+def test_calibration_nods_train_the_learned_move_and_land_on_x(monkeypatch, tmp_path):
+    from helm.calibration import default_calibration
+    from helm.contracts import FrameFeatures
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path)
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server", "--player", "sam"]))
+    calib = default_calibration("sam", mode="full")
+    rng = np.random.default_rng(0)
+
+    def frames(n, pitch=0.0, yaw=0.0):
+        return [FrameFeatures(seq=i, t_capture_ns=i * 33_000_000, t_infer_ns=i * 33_000_000, face=True,
+                              pitch=pitch + rng.normal(0, 0.3), yaw=yaw + rng.normal(0, 0.3)) for i in range(n)]
+
+    takes = [frames(12, pitch=15.0) for _ in range(3)]
+    not_nod = [frames(30), frames(30, yaw=-15.0), frames(30, yaw=15.0)]
+    rt._prepare_nod(calib, {}, takes, not_nod)                     # normally on a worker
+    rt._handle_requests()
+    assert "nod_up" in rt._learned()
+    assert {"gesture": "nod_up", "target": "X", "mode": "tap"} in rt._mapping["buttons"]
+    assert rt._mapping["gestures"]["nod_up"]["kind"] == "learned"
+    deadline = time.monotonic() + 3.0                            # fit and save happen on a worker
+    while not (tmp_path / "sam" / "SuperTuxKart.json").exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert json.loads((tmp_path / "sam" / "SuperTuxKart.json").read_text())["gestures"]["nod_up"]["kind"] == "learned"
+
+
+def test_face_id_learns_during_head_movement_steps_and_protects_the_profile(monkeypatch, tmp_path):
+    import helm.identity as identity
+    import helm.main as main_mod
+    from types import SimpleNamespace
+    monkeypatch.setattr(profiles, "_ROOT", tmp_path / "profiles")
+    weights = tmp_path / "sface.onnx"
+    weights.write_bytes(b"x")
+    monkeypatch.setattr(identity, "MODEL_PATH", weights)
+    monkeypatch.setattr(config, "FACE_ID_INTERVAL_S", 0.0)
+    me = np.random.default_rng(1).normal(size=128)
+    embedded: list[int] = []
+
+    class Camera:
+        seq = 0
+        def wait_latest(self, last, timeout=0.2):
+            time.sleep(0.001)
+            Camera.seq += 1
+            return np.zeros((480, 640, 3), np.uint8), Camera.seq * 1_000_000, Camera.seq
+
+    class Encoder:
+        def embed(self, image, face):
+            embedded.append(Camera.seq)
+            return identity.unit(me + np.random.default_rng(Camera.seq).normal(scale=0.05, size=128))
+
+    class Tracker:
+        def __init__(self, num_faces=1): pass
+        def process_all(self, image, t, seq): return [SimpleNamespace()]
+        def close(self): pass
+
+    monkeypatch.setattr(identity, "SFace", Encoder)
+    monkeypatch.setattr(main_mod, "FaceTracker", Tracker)
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server", "--player", "sam"]))
+    rt._camera = Camera()                                      # a camera, so Face ID can run
+    rt._do_calibrate("full")
+    assert rt._calibrator is not None and rt._face_id is not None   # no step of its own: calibration starts now
+    time.sleep(0.1)
+    assert embedded == []                                      # not sampling until a head-movement step
+    rt._face_id.active = True                                  # what the pipeline sets during neutral / range steps
+    deadline = time.monotonic() + 3.0
+    while rt._face_id.samples < config.FACE_ID_SAMPLES and time.monotonic() < deadline:
+        time.sleep(0.01)
+    rt._face_id.active = False                                 # expression steps: no samples
+    count = len(embedded)
+    time.sleep(0.1)
+    assert count == config.FACE_ID_SAMPLES and len(embedded) == count
+    rt._face_id.finish()                                       # the calibration ended
+    rt._calibrator = None
+    while not rt._face_id.done and time.monotonic() < deadline:
+        time.sleep(0.01)
+    rt._face_id_ended()
+    assert [e["data"] for e in rt.pop_events() if e["name"] == "face_id_done"] == [
+        {"saved": True, "reason": "", "samples": config.FACE_ID_SAMPLES}]
+    assert identity.identity_required("sam") and rt._identity_required and rt._face_id is None
+
+
+def test_shared_profiles_and_no_camera_skip_face_id():
+    rt = Runtime(parse_args(["--mock", "--output", "null", "--no-server"]))   # guest, mock: no camera
+    rt._do_calibrate("full")
+    assert rt._face_id is None and rt._calibrator is not None

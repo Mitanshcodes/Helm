@@ -16,6 +16,11 @@
   --on-pink: var(--ink); /* text on a pink fill */
   --mesh: #ffe800; /* face lines over the camera picture */
   --focus: #0078bf;
+  /* Xbox face buttons: the pad and the move cards share these, so a move and its button read as one. */
+  --xa: #5dc21e; /* A green */
+  --xb: #ff4f45; /* B red */
+  --xx: #3ba4f5; /* X blue */
+  --xy: #ffc83d; /* Y yellow */
   --display: "Bricolage Grotesque", "Atkinson Hyperlegible", system-ui, sans-serif;
   --body: "Atkinson Hyperlegible", system-ui, sans-serif;
   --zoom: 1; /* TEXT option */
@@ -49,6 +54,10 @@
   --on-pink: #ffffff;
   --mesh: #ffffff;
   --mis: 0;
+  --xa: #000000;
+  --xb: #000000;
+  --xx: #000000;
+  --xy: #000000;
 }
 
 * {
@@ -502,6 +511,31 @@ code {
   transform: rotate(-4deg);
 }
 
+.move,
+.pad-legend li {
+  --hl: var(--pink);
+}
+
+.move.hl-A,
+.pad-legend li.hl-A {
+  --hl: var(--xa);
+}
+
+.move.hl-B,
+.pad-legend li.hl-B {
+  --hl: var(--xb);
+}
+
+.move.hl-X,
+.pad-legend li.hl-X {
+  --hl: var(--xx);
+}
+
+.move.hl-Y,
+.pad-legend li.hl-Y {
+  --hl: var(--xy);
+}
+
 .move {
   position: relative;
   display: flex;
@@ -516,7 +550,7 @@ code {
 }
 
 .move.firing {
-  background: var(--pink);
+  background: var(--hl);
   color: var(--on-pink);
   box-shadow: 7px 7px 0 var(--ink);
   animation: slap 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -576,11 +610,11 @@ code {
   font-size: 56px;
   line-height: 0.85;
   letter-spacing: -0.04em;
-  text-shadow: calc(var(--mis) * 3px) calc(var(--mis) * 2px) 0 var(--pink);
+  text-shadow: calc(var(--mis) * 3px) calc(var(--mis) * 2px) 0 var(--hl, var(--pink));
 }
 
 .move.firing .letter {
-  text-shadow: calc(var(--mis) * 3px) calc(var(--mis) * 2px) 0 var(--blue);
+  text-shadow: calc(var(--mis) * 3px) calc(var(--mis) * 2px) 0 var(--paper);
 }
 
 .letter.none {
@@ -611,7 +645,7 @@ code {
 .move .fill {
   position: absolute;
   inset: 0 auto 0 0;
-  background: radial-gradient(circle, var(--pink) 1.7px, transparent 2px) 0 0 / 6px 6px;
+  background: radial-gradient(circle, var(--hl) 1.7px, transparent 2px) 0 0 / 6px 6px;
 }
 
 .move.firing .fill {
@@ -656,7 +690,7 @@ code {
   margin: -9px 0 0 -9px;
   border: 3px solid var(--ink);
   border-radius: 50%;
-  background: var(--pink);
+  background: var(--hl);
 }
 
 .move.firing .bar.steer .dot {
@@ -902,69 +936,218 @@ code {
 }
 
 .pad-legend {
-  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  font-size: 17px;
+}
+
+.legend-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: 2.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--hl);
+  font-family: var(--display);
+  font-weight: 800;
   font-size: 16px;
 }
 
-/* The pad drawing: pink body, blue outline; a pressed button fills pink. */
+/* The pad drawing: an Xbox controller, flat, with thick ink outlines. White shell, dark parts, A B X Y letters in
+   their colours; pressed, a cap fills with its colour (pink for inputs without one). */
 .controller-view {
   display: block;
   width: 100%;
-  max-width: 520px;
   height: auto;
-  margin: 10px auto 0;
+  margin: 6px auto 0;
   overflow: visible;
 }
 
 .controller-view text {
-  font-family: var(--body);
-  font-size: 12px;
-  font-weight: 700;
+  font-family: var(--display);
+  font-weight: 800;
   text-anchor: middle;
-  fill: var(--ink);
 }
 
 .pad-shell {
-  fill: var(--pink-soft);
-  stroke: var(--blue);
-  stroke-width: 3;
-}
-
-.pad-button circle,
-.pad-button rect,
-.pad-well {
-  fill: var(--paper);
+  fill: var(--white);
   stroke: var(--ink);
-  stroke-width: 2;
+  stroke-width: 7;
+  stroke-linejoin: round;
 }
 
-.pad-crosshair {
-  stroke: none;
+.pad-sheen {
+  fill: none;
+  stroke: #e3ddcf;
+  stroke-width: 14;
+  stroke-linecap: round;
 }
 
-.pad-thumb {
-  fill: var(--pink);
+.pad-bumper {
+  fill: #3a3a3a;
   stroke: var(--ink);
-  stroke-width: 2.5;
+  stroke-width: 6;
+  stroke-linejoin: round;
 }
 
 .pad-trigger-track {
-  fill: var(--paper);
-  stroke: var(--blue);
-  stroke-width: 2;
+  fill: #3a3a3a;
+  stroke: var(--ink);
+  stroke-width: 4;
 }
 
 .pad-trigger-fill {
   fill: var(--pink);
 }
 
+.controller-view .pad-trigger-label {
+  fill: var(--white);
+  font-family: var(--body);
+  font-size: 19px;
+}
+
+.pad-guide circle {
+  fill: var(--ink);
+}
+
+.pad-guide path {
+  fill: none;
+  stroke: var(--white);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+.pad-round circle,
+.pad-share rect {
+  fill: var(--white);
+  stroke: var(--ink);
+  stroke-width: 4;
+}
+
+.pad-glyph {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pad-well {
+  fill: #2b2b2b;
+  stroke: var(--ink);
+  stroke-width: 5;
+}
+
+.pad-thumb {
+  fill: #4b4b4b;
+  stroke: var(--ink);
+  stroke-width: 3;
+}
+
+.pad-thumb-ring {
+  fill: none;
+  stroke: #333333;
+  stroke-width: 4;
+}
+
+.pad-dpad-base circle {
+  fill: #2b2b2b;
+  stroke: var(--ink);
+  stroke-width: 5;
+}
+
+.pad-dpad-arm {
+  fill: #4b4b4b;
+  stroke: var(--ink);
+  stroke-width: 3;
+}
+
+/* Direction overlays: invisible until pressed. */
+.pad-dpad {
+  fill: transparent;
+  stroke: none;
+}
+
+.pad-face circle {
+  fill: #2b2b2b;
+  stroke: var(--ink);
+  stroke-width: 4;
+}
+
+.controller-view .pad-face text {
+  font-size: 34px;
+}
+
+.controller-view .pad-A text {
+  fill: var(--xa);
+}
+
+.controller-view .pad-B text {
+  fill: var(--xb);
+}
+
+.controller-view .pad-X text {
+  fill: var(--xx);
+}
+
+.controller-view .pad-Y text {
+  fill: var(--xy);
+}
+
 .pad-button.is-pressed circle,
-.pad-button.is-pressed rect {
+.pad-button.is-pressed:is(path, rect),
+.pad-stick.is-pressed .pad-thumb {
   fill: var(--pink);
 }
 
-.pad-button.is-pressed text {
-  fill: var(--on-pink);
+.pad-A.is-pressed circle {
+  fill: var(--xa);
+}
+
+.pad-B.is-pressed circle {
+  fill: var(--xb);
+}
+
+.pad-X.is-pressed circle {
+  fill: var(--xx);
+}
+
+.pad-Y.is-pressed circle {
+  fill: var(--xy);
+}
+
+.controller-view .pad-face.is-pressed text {
+  fill: var(--ink);
+}
+
+:root[data-contrast="high"] .pad-sheen {
+  display: none;
+}
+
+:root[data-contrast="high"] .pad-face circle,
+:root[data-contrast="high"] .pad-well,
+:root[data-contrast="high"] .pad-thumb,
+:root[data-contrast="high"] .pad-trigger-track,
+:root[data-contrast="high"] .pad-bumper,
+:root[data-contrast="high"] .pad-dpad-base circle,
+:root[data-contrast="high"] .pad-dpad-arm {
+  fill: #000000;
+}
+
+:root[data-contrast="high"] .controller-view .pad-face text {
+  fill: #ffffff;
+}
+
+:root[data-contrast="high"] .pad-face.is-pressed circle {
+  fill: #ffffff;
+}
+
+:root[data-contrast="high"] .controller-view .pad-face.is-pressed text {
+  fill: #000000;
 }
 
 .controller-view .unused {
@@ -1880,11 +2063,28 @@ input[type="range"] {
 
 /* ---------------------------------------------------------------- the camera, centre stage */
 
+/* The camera, centre stage, with a pixel character standing either side. */
 .camera-row {
+  position: relative;
   display: flex;
   justify-content: center;
+  align-items: flex-end;
+  gap: clamp(24px, 4vw, 80px);
   padding: 6px 0 4px;
 }
+
+/* Everything in the row sits above the harbour. */
+.camera-row > :not(.fleet) {
+  position: relative;
+  z-index: 1;
+}
+
+/* A flex item sizes to its content, so the polaroid needs a real width to be big. */
+.camera-row .polaroid.hero {
+  width: min(calc(100vw - 480px), calc(64vh * 4 / 3 + 34px));
+}
+
+
 
 .polaroid.hero {
   width: min(100%, calc(60vh * 4 / 3 + 34px));
@@ -1902,6 +2102,12 @@ input[type="range"] {
   grid-template-columns: minmax(0, 1fr) minmax(360px, 0.42fr);
   align-items: start;
   gap: 34px;
+}
+
+.play-row .controller-card {
+  position: sticky;
+  top: 18px;
+  margin-top: 18px;
 }
 
 .moves-col {
@@ -2441,4 +2647,170 @@ input[type="range"] {
 :root[data-contrast="high"] .avatar {
   transform: none;
   box-shadow: none;
+}
+
+/* ---------------------------------------------------------------- the harbour (decoration only) */
+
+.fleet {
+  position: absolute;
+  inset: 0 calc(-1 * 34px); /* out to the page edges */
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Each ship crosses the whole row; leftward ones are mirrored so the bow leads. */
+.sail {
+  position: absolute;
+  left: 0;
+  width: 110px; /* the 44 x 21 grid at 2.5x */
+  animation: sail-right linear infinite;
+}
+
+.sail.leftward {
+  animation-name: sail-left;
+}
+
+/* Wake + ship, bow right; a leftward ship mirrors both so the wake always trails behind the stern. */
+.hull {
+  position: relative;
+  transform: scale(var(--ship-scale, 1));
+}
+
+.sail.leftward .hull {
+  transform: scale(var(--ship-scale, 1)) scaleX(-1);
+}
+
+.ship {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.wake {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  width: 140px; /* 56 x 21 at 2.5x */
+  height: 100%;
+  margin-right: -6px;
+}
+
+/* The sea: a pale-blue riso halftone over the harbour, fading out at the edges; the paper still shows through. */
+.sea {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, #97cbe6 1.8px, transparent 2.1px) 0 0 / 11px 11px;
+  opacity: 0.85;
+  -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 50%, #000 45%, transparent 100%);
+  mask-image: radial-gradient(ellipse 75% 70% at 50% 50%, #000 45%, transparent 100%);
+}
+
+/* Ripples: pixel wave marks that drift and shimmer. */
+.ripple {
+  position: absolute;
+  height: auto;
+  fill: #7fc0e2;
+  opacity: 0.6;
+  animation: ripple 5s ease-in-out infinite alternate;
+}
+
+@keyframes ripple {
+  from {
+    opacity: 0.35;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 0.9;
+    transform: translateX(4px);
+  }
+}
+
+/* Swells: long, low wave lines drifting slowly. */
+.swell {
+  position: absolute;
+  width: 230px;
+  height: auto;
+  fill: #93cbe7;
+  opacity: 0.7;
+  animation: swell 18s ease-in-out infinite alternate;
+}
+
+@keyframes swell {
+  from {
+    transform: translateX(-30px);
+  }
+  to {
+    transform: translateX(30px);
+  }
+}
+
+/* Measured from the harbour's own width (not the viewport), so the page zoom never cuts a crossing short. */
+@keyframes sail-right {
+  from {
+    left: -130px;
+  }
+  to {
+    left: calc(100% + 20px);
+  }
+}
+
+@keyframes sail-left {
+  from {
+    left: calc(100% + 20px);
+  }
+  to {
+    left: -130px;
+  }
+}
+
+/* The splash: two frames of foam that take turns. */
+.foam-a {
+  animation: foam 0.8s steps(1) infinite;
+}
+
+.foam-b {
+  animation: foam 0.8s steps(1) infinite reverse;
+}
+
+@keyframes foam {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+:root[data-ships="off"] .fleet,
+:root[data-contrast="high"] .fleet {
+  display: none;
+}
+
+/* Low or reduced motion: the fleet rides at anchor, one splash frame. */
+:root[data-motion="low"] .sail {
+  animation: none;
+  left: var(--anchor-x, 10%);
+}
+
+:root[data-motion="low"] .foam-b {
+  display: none;
+}
+
+:root[data-motion="low"] .ripple,
+:root[data-motion="low"] .swell {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sail,
+  .ripple,
+  .swell {
+    animation: none !important;
+  }
+
+  .foam-b {
+    display: none;
+  }
 }

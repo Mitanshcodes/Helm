@@ -33,7 +33,8 @@ class Player:
     """Synthetic player that follows the calibration prompts."""
 
     def __init__(self, yaw_left=20.0, yaw_right=25.0, up=12.0, down=2.0, weak=(), neutral_yaw=3.0,
-                 react_s=0.0):
+                 react_s=0.0, nod=14.0):
+        self.nod = nod
         self.yaw_left, self.yaw_right, self.up, self.down = yaw_left, yaw_right, up, down
         self.weak, self.neutral_yaw = weak, neutral_yaw
         self.react_s = react_s                     # seconds into a step before the player starts moving
@@ -53,6 +54,8 @@ class Player:
             pitch += self.up
         elif step == "pitch_down":
             pitch -= self.down
+        elif step == "nod_up":                     # three nods, chin well up each time
+            pitch += self.nod * max(0.0, math.sin(2 * math.pi * t_in_step * 0.75))
         name = {"brow_raise": "browInnerUp", "jaw_open": "jawOpen", "smile": "mouthSmileLeft"}.get(step)
         if name:
             amp = 0.1 if name in self.weak else 0.7
@@ -80,7 +83,7 @@ def test_full_calibration_measures_the_player():
     progs, t = run(cal, Player())
     steps = [p.step for p in progs if p.active]
     assert list(dict.fromkeys(steps)) == ["neutral", "yaw_left", "yaw_right", "pitch_up", "pitch_down",
-                                          "brow_raise", "jaw_open", "smile"]
+                                          "brow_raise", "jaw_open", "smile", "nod_up"]
     assert t < 45
     overall = [p.overall for p in progs]
     assert overall == sorted(overall) and progs[-1].overall == 1.0
@@ -206,3 +209,20 @@ def test_head_turns_raise_the_scale_so_steering_stays_below_off():
     assert 0.4 / span <= config.TRIGGER_OFF + 1e-6                # a relaxed face while steering never presses
     assert "browInnerUp" not in c.reliable
     assert any("Brow raise" in n and "turn your head" in n for n in cal.notes)
+
+
+def test_nod_step_keeps_each_nod_as_a_take_for_the_learned_move():
+    cal = Calibrator("sam", "full")
+    progs, _ = run(cal, Player())
+    takes, not_nod = cal.nod_samples()
+    assert len(takes) == 3 and all(len(t) >= config.CALIB_NOD_MIN_FRAMES for t in takes)
+    assert all(f.pitch - (-4.0) >= config.CALIB_NOD_MIN_DEG for t in takes for f in t)   # only chin-up frames
+    assert len(not_nod) == 7 and all(f.landmarks is None for seg in not_nod for f in seg)
+    assert any("(2 of 3)" in p.prompt for p in progs if p.step == "nod_up")
+    assert not any("Nod up" in n for n in cal.notes)
+
+
+def test_no_nod_means_no_takes_and_a_note():
+    cal = Calibrator("sam", "full")
+    run(cal, Player(nod=0.0))
+    assert cal.nod_samples()[0] == [] and any("Nod up was hard to read" in n for n in cal.notes)
